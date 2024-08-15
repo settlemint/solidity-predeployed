@@ -8,9 +8,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 /// @custom:security-contact support@settlemint.com
 contract SettleMintERC20 is ERC20 {
     /// @dev Initializes the contract by setting a `name` and a `symbol` to the token.
-    /// @param name The name of the token.
-    /// @param symbol The symbol of the token.
-    constructor(string memory name, string memory symbol) ERC20(name, symbol) {
+    constructor() ERC20("SettleMint", "ST") {
     }
 
     /// @dev Mints `amount` tokens and assigns them to `to`, increasing the total supply.
