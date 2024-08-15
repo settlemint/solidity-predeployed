@@ -3,10 +3,10 @@
   "chain": "localhost",
   "datasources": [
     {
-      "name": "GenericToken",
+      "name": "SettleMintERC20",
       "address": "0x0000000000000000000000000000000000000000",
       "startBlock": 0,
-      "module": ["erc20", "pausable", "accesscontrol"]
+      "module": ["erc20"]
     }
   ]
 }
