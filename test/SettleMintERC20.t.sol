@@ -19,6 +19,6 @@ contract SettleMintERC20Test is Test {
         uint256 mintAmount = 1000 * 10 ** token.decimals();
         token.mint(owner, mintAmount);
         uint256 newOwnerBalance = token.balanceOf(owner);
-        assertEq(newOwnerBalance, 101_000 * 10 ** token.decimals());
+        assertEq(newOwnerBalance, 1_000 * 10 ** token.decimals());
     }
 }
