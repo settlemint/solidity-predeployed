@@ -1,7 +1,7 @@
 {
   "name": "@settlemint/solidity-predeployed",
   "description": "Smart contracts that are predeployed in the genesis files of Besu/Quorum nodes in SettleMint",
-  "version": "7.5.2",
+  "version": "7.5.3",
   "private": false,
   "license": "FSL-1.1-MIT",
   "author": {
