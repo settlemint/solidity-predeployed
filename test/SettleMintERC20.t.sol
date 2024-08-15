@@ -12,7 +12,7 @@ contract SettleMintERC20Test is Test {
     function setUp() public {
         owner = address(this);
         recipient = address(0x1);
-        token = new SettleMintERC20("SettleMint", "STTLMNT");
+        token = new SettleMintERC20();
     }
 
     function testMint() public {
