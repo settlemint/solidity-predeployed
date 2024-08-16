@@ -42,7 +42,9 @@ Or if you want to use this set as a dependency of your own,
 npm install @settlemint/solidity-predeployed
 ```
 
-## Alloc Array```json
+## Alloc Array
+
+```json
 {
   "0x5e77lem1n71000000000000000000000000000001": {
     "balance": "0x0",
