@@ -32,10 +32,10 @@ process_sol_file() {
         return
     fi
 
-    # Compile the contract and get bytecode
-    local BYTECODE=$(forge inspect "${sol_file}:${contract_name}" bytecode | sed 's/^0x//')
-    if [[ -z "$BYTECODE" ]]; then
-        echo "Error: Unable to get bytecode for $contract_name"
+    # Deploy the contract to a temporary blockchain
+    local DEPLOYED_ADDRESS=$(forge create "${sol_file}:${contract_name}" --unlocked --from "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" --json | jq -r .deployedTo)
+    if [[ -z "$DEPLOYED_ADDRESS" ]]; then
+        echo "Error: Unable to deploy $contract_name"
         return
     fi
 
