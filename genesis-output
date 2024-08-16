@@ -39,13 +39,6 @@ process_sol_file() {
         return
     fi
 
-    # Deploy the contract to a temporary blockchain
-    local DEPLOYED_ADDRESS=$(forge create "${sol_file}:${contract_name}" --unlocked --from "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" --json | jq -r .deployedTo)
-    if [[ -z "$DEPLOYED_ADDRESS" ]]; then
-        echo "Error: Unable to deploy $contract_name"
-        return
-    fi
-
     # Get storage layout
     local STORAGE_LAYOUT=$(forge inspect "${sol_file}:${contract_name}" storage-layout)
     if [[ -z "$STORAGE_LAYOUT" ]]; then
@@ -62,6 +55,13 @@ process_sol_file() {
         local SLOT_VALUE=$(cast storage "$DEPLOYED_ADDRESS" "$SLOT_NUMBER")
         STORAGE_JSON=$(echo "$STORAGE_JSON" | jq --arg slot "0x$SLOT_NUMBER" --arg value "$SLOT_VALUE" '. + {($slot): $value}')
     done
+
+        # Get bytecode from the deployed contract
+    local BYTECODE=$(cast code "$DEPLOYED_ADDRESS" | sed 's/^0x//')
+    if [[ -z "$BYTECODE" ]]; then
+        echo "Error: Unable to get bytecode for deployed $contract_name"
+        return
+    fi
 
     # Use jq to add the contract allocation to the all_allocations.json file
     if ! jq --arg address "$target_address" \
