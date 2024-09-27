@@ -4,7 +4,7 @@ schema:
 dataSources:
   - kind: ethereum/contract
     name: erc1155
-    network: localhost
+    network: predeployed
     source:
       address: "0x5e771e1417100000000000000000000000000002"
       abi: SettleMintERC1155
@@ -30,7 +30,7 @@ dataSources:
       file: ./src/datasources/erc1155.ts
   - kind: ethereum/contract
     name: erc20
-    network: localhost
+    network: predeployed
     source:
       address: "0x5e771e1417100000000000000000000000000001"
       abi: SettleMintERC20
