@@ -269,12 +269,14 @@ jobs:
             ipfs_hashes=$(grep -oP 'Qm[a-zA-Z0-9]{44}' build_output.txt)
             for hash in $ipfs_hashes; do
               echo "Processing IPFS hash: $hash"
-              curl -X POST -u "${{ secrets.INFURA_IPFS_API_KEY }}:${{ secrets.INFURA_IPFS_API_SECRET }}" "https://ipfs.infura.io:5001/api/v0/pin/add?arg=$hash"
-              curl --request POST --url https://api.chainstack.com/v1/ipfs/pins/pinbycid \
+              echo "Pinning $hash to Infura"
+              curl -s -X POST -u "${{ secrets.INFURA_IPFS_API_KEY }}:${{ secrets.INFURA_IPFS_API_SECRET }}" "https://ipfs.infura.io:5001/api/v0/pin/add?arg=$hash"
+              echo "Pinning $hash to Chainstack"
+              curl -s --request POST --url https://api.chainstack.com/v1/ipfs/pins/pinbycid \
                    --header 'accept: application/json' \
                    --header 'authorization: Bearer ${{ secrets.CHAINSTACK_API_KEY }}' \
                    --header 'content-type: application/json' \
-                   --data "{\"cid\": \"$hash\"}"
+                   --data "{\"bucket_id\": \"BUCK-8412-8292-8457\", \"cid\": \"$hash\"}"
             done
 
             # Write IPFS hashes to a file
