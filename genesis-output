@@ -14,8 +14,8 @@ typeset -A CONTRACT_ADDRESSES
 ################################################################
 
 CONTRACT_ADDRESSES=(
-    "SettleMintERC20" "0x5e771e1417100000000000000000000000000001"
-    "SettleMintERC1155" "0x5e771e1417100000000000000000000000000002"
+    "SettleMintERC20Registry" "0x5e771e1417100000000000000000000000000001"
+    "SettleMintERC20Factory" "0x5e771e1417100000000000000000000000000002"
 )
 
 # Initialize an empty JSON object for all allocations
