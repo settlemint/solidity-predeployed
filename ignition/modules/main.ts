@@ -11,8 +11,12 @@ const SeedModule = buildModule("SeedModule", (m) => {
   const { registry, factory } = m.useModule(StarterKitModule);
 
   // Create a new token using the factory
-  m.call(factory, "createToken", ["Example Token", "EXT", "This is an example token"]);
+  const create = m.call(factory, "createToken", ["Example Token", "EXT", "This is an example token"]);
+  const tokenAddress = m.readEventArgument(create, "TokenCreated", "tokenAddress");
 
+  const existingToken = m.contractAt("StarterKitERC20", tokenAddress);
+
+  m.call(existingToken, "mint", ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", 100000000000000000000n]);
 
   return { registry, factory };
 });
