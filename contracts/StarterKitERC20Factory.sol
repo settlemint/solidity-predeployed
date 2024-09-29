@@ -10,12 +10,16 @@ import { StarterKitERC20 } from "./StarterKitERC20.sol";
 /// @custom:security-contact security@settlemint.com
 contract StarterKitERC20Factory {
     /// @dev The registry where created tokens are stored
-    StarterKitERC20Registry public _registry = StarterKitERC20Registry(0x5E771E1417100000000000000000000000000001);
+    StarterKitERC20Registry public _registry;
+
+    constructor(address registryAddress) {
+        _registry = StarterKitERC20Registry(registryAddress);
+    }
 
     /// @dev Emitted when a new token is created
     /// @param tokenAddress The address of the newly created token
     /// @param symbol The symbol of the newly created token
-    event TokenCreated(address tokenAddress, string symbol);
+    event TokenCreated(address tokenAddress, string name, string symbol, string extraData);
 
     /// @notice Returns the address of the token registry
     /// @return The StarterKitERC20Registry interface
@@ -31,7 +35,7 @@ contract StarterKitERC20Factory {
     function createToken(string calldata name_, string calldata symbol_, string calldata extraData_) external {
         StarterKitERC20 token = new StarterKitERC20(name_, symbol_, msg.sender);
 
-        _registry.addToken(address(token), symbol_, extraData_);
-        emit TokenCreated(address(token), symbol_);
+        _registry.addToken(address(token), name_, symbol_, extraData_, address(this));
+        emit TokenCreated(address(token), name_, symbol_, extraData_);
     }
 }

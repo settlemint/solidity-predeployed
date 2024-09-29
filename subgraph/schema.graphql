@@ -1,119 +1,247 @@
+"""
+Represents an Ethereum account
+"""
 type Account @entity {
+	"The Ethereum address of the account"
 	id: Bytes!
-	asERC1155: ERC1155Contract
-	ERC1155balances: [ERC1155Balance!]! @derivedFrom(field: "account")
-	ERC1155operatorOwner: [ERC1155Operator!]! @derivedFrom(field: "owner")
-	ERC1155operatorOperator: [ERC1155Operator!]! @derivedFrom(field: "operator")
-	ERC1155transferFromEvent: [ERC1155Transfer!]! @derivedFrom(field: "from")
-	ERC1155transferToEvent: [ERC1155Transfer!]! @derivedFrom(field: "to")
-	ERC1155transferOperatorEvent: [ERC1155Transfer!]! @derivedFrom(field: "operator")
-  asERC20: ERC20Contract
-	ERC20balances: [ERC20Balance!]! @derivedFrom(field: "account")
-	ERC20approvalsOwner: [ERC20Approval!]! @derivedFrom(field: "owner")
-	ERC20approvalsSpender: [ERC20Approval!]! @derivedFrom(field: "spender")
-	ERC20transferFromEvent: [ERC20Transfer!]! @derivedFrom(field: "from")
-	ERC20transferToEvent: [ERC20Transfer!]! @derivedFrom(field: "to")
+	"The Token associated with this account, if it represents a token contract"
+	asToken: Token
+	"Events emitted by this account"
 	events: [Event!]! @derivedFrom(field: "emitter")
+	"Timestamp of the last transaction involving this account"
+	lastTransactionTimestamp: BigInt
+	"Native currency balance in decimal format"
+	nativeValue: BigDecimal!
+	"Native currency balance as an exact BigInt"
+	nativeValueExact: BigInt!
+	"Token approvals where this account is the owner"
+	tokenApprovalsOwner: [TokenApproval!]! @derivedFrom(field: "owner")
+	"Token approvals where this account is the spender"
+	tokenApprovalsSpender: [TokenApproval!]! @derivedFrom(field: "spender")
+	"Token balances owned by this account"
+	tokenBalances: [TokenBalance!]! @derivedFrom(field: "account")
+	"Token transfers from this account"
+	tokenTransferFromEvent: [TokenTransfer!]! @derivedFrom(field: "from")
+	"Token transfers to this account"
+	tokenTransferToEvent: [TokenTransfer!]! @derivedFrom(field: "to")
+	"The timestamp when the Account was created"
+	createdAt: BigInt!
+	"The timestamp when the Account was last updated"
+	updatedAt: BigInt!
 }
-type ERC1155Contract @entity(immutable: true) {
+
+"""
+Represents an Ethereum block
+"""
+type Block @entity(immutable: true) {
+	"The block hash"
 	id: Bytes!
-	asAccount: Account!
-	tokens: [ERC1155Token!]! @derivedFrom(field: "contract")
-	balances: [ERC1155Balance!]! @derivedFrom(field: "contract")
-	operators: [ERC1155Operator!]! @derivedFrom(field: "contract")
-	transfers: [ERC1155Transfer!]! @derivedFrom(field: "contract")
-}
-type ERC1155Token @entity {
-	id: ID!
-	contract: ERC1155Contract!
-	identifier: BigInt!
-	uri: String
-	totalSupply: ERC1155Balance!
-	balances: [ERC1155Balance!]! @derivedFrom(field: "token")
-	transfers: [ERC1155Transfer!]! @derivedFrom(field: "token")
-}
-type ERC1155Balance @entity {
-	id: ID!
-	contract: ERC1155Contract!
-	token: ERC1155Token!
-	account: Account
-	value: BigDecimal!
-	valueExact: BigInt!
-	transferFromEvent: [ERC1155Transfer!]! @derivedFrom(field: "fromBalance")
-	transferToEvent: [ERC1155Transfer!]! @derivedFrom(field: "toBalance")
-}
-type ERC1155Operator @entity {
-	id: ID!
-	contract: ERC1155Contract!
-	owner: Account!
-	operator: Account!
-	approved: Boolean!
-}
-type ERC1155Transfer implements Event @entity(immutable: true) {
-	id: ID!
-	emitter: Account!
-	transaction: Transaction!
+	"The block number"
+	number: BigInt!
+	"The block timestamp"
 	timestamp: BigInt!
-	contract: ERC1155Contract!
-	token: ERC1155Token!
-	operator: Account!
-	from: Account
-	fromBalance: ERC1155Balance
-	to: Account
-	toBalance: ERC1155Balance
-	value: BigDecimal!
-	valueExact: BigInt!
+	"Transactions in this block"
+	transactions: [Transaction!]! @derivedFrom(field: "block")
 }
-interface Event {
-	id: ID!
-	transaction: Transaction!
-	emitter: Account!
-	timestamp: BigInt!
-}
-type Transaction @entity(immutable: true) {
-	id: ID!
-	timestamp: BigInt!
-	blockNumber: BigInt!
-	events: [Event!]! @derivedFrom(field: "transaction")
-}
-type ERC20Contract @entity(immutable: true) {
+
+"""
+Represents the StarterKitERC20Factory contract
+"""
+type Factory @entity {
+	"The address of the factory contract"
 	id: Bytes!
-	asAccount: Account!
-	name: String
-	symbol: String
+	"List of tokens created by this factory"
+	createdTokens: [Token!]! @derivedFrom(field: "factory")
+	"The Registry associated with this factory"
+	registry: Registry!
+	"The timestamp when the Factory was created"
+	createdAt: BigInt!
+	"The timestamp when the Factory was last updated"
+	updatedAt: BigInt!
+}
+
+"""
+Represents the StarterKitERC20Registry contract
+"""
+type Registry @entity {
+	"The address of the registry contract"
+	id: Bytes!
+	"List of tokens registered in this registry"
+	tokens: [Token!]! @derivedFrom(field: "registry")
+	"The timestamp when the Registry was created"
+	createdAt: BigInt!
+	"The timestamp when the Registry was last updated"
+	updatedAt: BigInt!
+}
+
+"""
+Represents a token in the system
+"""
+type Token @entity {
+	"The Ethereum address of the token contract"
+	id: Bytes!
+	"The name of the token"
+	name: String!
+	"The symbol of the token"
+	symbol: String!
+	"The number of decimal places for token amounts"
 	decimals: Int!
-	totalSupply: ERC20Balance!
-	balances: [ERC20Balance!]! @derivedFrom(field: "contract")
-	approvals: [ERC20Approval!]! @derivedFrom(field: "contract")
-	transfers: [ERC20Transfer!]! @derivedFrom(field: "contract")
-}
-type ERC20Balance @entity {
-	id: ID!
-	contract: ERC20Contract!
-	account: Account
+	"The total supply of the token"
+	totalSupply: BigInt!
+	"Number of unique token holders"
+	tokenHolders: BigInt!
+	"The factory that created this token"
+	factory: Factory!
+	"The registry this token is registered in"
+	registry: Registry!
+	"Additional data associated with the token"
+	extraData: String!
+	"The total value of tokens in decimal format"
 	value: BigDecimal!
+	"The total value of tokens as an exact BigInt"
 	valueExact: BigInt!
-	transferFromEvent: [ERC20Transfer!]! @derivedFrom(field: "fromBalance")
-	transferToEvent: [ERC20Transfer!]! @derivedFrom(field: "toBalance")
+	"Token approvals for this token"
+	approvals: [TokenApproval!]! @derivedFrom(field: "token")
+	"Token balances for this token"
+	balances: [TokenBalance!]! @derivedFrom(field: "token")
+	"Token transfers for this token"
+	transfers: [TokenTransfer!]! @derivedFrom(field: "token")
+	"The timestamp when the Token was created"
+	createdAt: BigInt!
+	"The timestamp when the Token was last updated"
+	updatedAt: BigInt!
 }
-type ERC20Approval @entity {
+
+"""
+Represents an approval for a token
+"""
+type TokenApproval @entity {
+	"Unique identifier for the TokenApproval"
 	id: ID!
-	contract: ERC20Contract!
+	"The Token this approval is for"
+	token: Token!
+	"The Account that owns the tokens"
 	owner: Account!
+	"The Account approved to spend the tokens"
 	spender: Account!
+	"The approved value in decimal format"
 	value: BigDecimal!
+	"The approved value as an exact BigInt"
+	valueExact: BigInt!
+	"The timestamp when the TokenApproval was created"
+	createdAt: BigInt!
+	"The timestamp when the TokenApproval was last updated"
+	updatedAt: BigInt!
+}
+
+"""
+Represents the balance of a token for an account
+"""
+type TokenBalance @entity {
+	"Unique identifier for the TokenBalance"
+	id: ID!
+	"The Account that owns this balance"
+	account: Account!
+	"The Token this balance is for"
+	token: Token!
+	"Token transfers from this balance"
+	transferFromEvent: [TokenTransfer!]! @derivedFrom(field: "fromBalance")
+	"Token transfers to this balance"
+	transferToEvent: [TokenTransfer!]! @derivedFrom(field: "toBalance")
+	"The balance value in decimal format"
+	value: BigDecimal!
+	"The balance value as an exact BigInt"
+	valueExact: BigInt!
+	"The timestamp when the TokenBalance was created"
+	createdAt: BigInt!
+	"The timestamp when the TokenBalance was last updated"
+	updatedAt: BigInt!
+}
+
+"""
+Represents a token transfer event
+"""
+type TokenTransfer @entity(immutable: true) {
+	"Unique identifier for the TokenTransfer"
+	id: ID!
+	"The Account that emitted this transfer event"
+	emitter: Account!
+	"The Token involved in this transfer"
+	token: Token!
+	"The Account tokens were transferred from"
+	from: Account!
+	"The TokenBalance of the 'from' account before the transfer"
+	fromBalance: TokenBalance!
+	"The timestamp of the transfer"
+	timestamp: BigInt!
+	"The Account tokens were transferred to"
+	to: Account!
+	"The TokenBalance of the 'to' account after the transfer"
+	toBalance: TokenBalance!
+	"The Transaction in which this transfer occurred"
+	transaction: Transaction!
+	"The transferred value in decimal format"
+	value: BigDecimal!
+	"The transferred value as an exact BigInt"
 	valueExact: BigInt!
 }
-type ERC20Transfer implements Event @entity(immutable: true) {
-	id: ID!
-	emitter: Account!
-	transaction: Transaction!
+
+"""
+Represents the volume of a token over time
+"""
+type TokenVolume @entity(timeseries: true) {
+	"Unique identifier for the TokenVolume"
+	id: Int8!
+	"The timestamp of the volume measurement"
+	timestamp: Timestamp!
+	"The Token this volume is for"
+	token: Token!
+	"The number of transfers in this time period"
+	transferCount: Int!
+	"The volume of the token transferred"
+	volume: BigInt!
+}
+
+"""
+Represents aggregated statistics for token volume
+"""
+type TokenVolumeStats @aggregation(intervals: ["hour", "day"], source: "TokenVolume") {
+	"Unique identifier for the TokenVolumeStats"
+	id: Int8!
+	"The timestamp of the aggregation"
+	timestamp: Timestamp!
+	"The total number of transfers in the aggregation period"
+	totalTransfers: Int! @aggregate(fn: "sum", arg: "transferCount")
+	"The total volume for the aggregation period"
+	totalVolume: BigInt! @aggregate(fn: "sum", arg: "volume")
+}
+
+"""
+Represents an Ethereum transaction
+"""
+type Transaction @entity(immutable: true) {
+	"The hash of the transaction"
+	id: Bytes!
+	"The block in which this transaction was included"
+	block: Block!
+	"The block number in which the transaction was included"
+	blockNumber: BigInt!
+	"Events emitted in this transaction"
+	events: [Event!]! @derivedFrom(field: "transaction")
+	"The timestamp of the transaction"
 	timestamp: BigInt!
-	contract: ERC20Contract!
-	from: Account
-	fromBalance: ERC20Balance
-	to: Account
-	toBalance: ERC20Balance
-	value: BigDecimal!
-	valueExact: BigInt!
+}
+
+"""
+Represents an event emitted by a smart contract
+"""
+type Event @entity(immutable: true) {
+	"Unique identifier for the Event"
+	id: ID!
+	"The Account that emitted this event"
+	emitter: Account!
+	"The Transaction in which this event was emitted"
+	transaction: Transaction!
+	"The timestamp of the event"
+	timestamp: BigInt!
 }

@@ -11,7 +11,7 @@ contract StarterKitERC20Registry {
     /// @param tokenAddress The address of the token contract being added
     /// @param symbol The symbol of the token being added
     /// @param extraData Any extra data associated with the token
-    event TokenAdded(address tokenAddress, string symbol, string extraData);
+    event TokenAdded(address tokenAddress, string name, string symbol, string extraData, address factoryAddress);
 
     /// @dev Error thrown when a token is not found in the registry
     /// @param tokenAddress The address of the token that was not found
@@ -52,7 +52,16 @@ contract StarterKitERC20Registry {
     /// @param extraData Additional data associated with the token
     /// @custom:throws TokenAddressAlreadyExists if the token address is already registered
     /// @custom:throws TokenSymbolAlreadyExists if the token symbol is already registered
-    function addToken(address tokenAddress, string calldata symbol, string calldata extraData) public virtual {
+    function addToken(
+        address tokenAddress,
+        string calldata name,
+        string calldata symbol,
+        string calldata extraData,
+        address factoryAddress
+    )
+        public
+        virtual
+    {
         if (addressToIndex[tokenAddress] != 0) revert TokenAddressAlreadyExists(tokenAddress);
         if (symbolToIndex[symbol] != 0) revert TokenSymbolAlreadyExists(symbol);
 
@@ -61,7 +70,7 @@ contract StarterKitERC20Registry {
         addressToIndex[tokenAddress] = index;
         symbolToIndex[symbol] = index;
 
-        emit TokenAdded(tokenAddress, symbol, extraData);
+        emit TokenAdded(tokenAddress, name, symbol, extraData, factoryAddress);
     }
 
     /// @notice Retrieves a token by its address

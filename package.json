@@ -48,5 +48,11 @@
   "overrides": {
     "@graphprotocol/graph-cli": "0.84.0",
     "@graphprotocol/graph-ts": "0.35.1"
+  },
+  "scripts": {
+    "start": "docker compose up -d",
+    "deploy:contracts": "BTP_RPC_URL=http://localhost:8545 npx hardhat ignition deploy --reset --network btp ./ignition/modules/main.ts",
+    "deploy:subgraph": "cd subgraph && ./graph-local-deploy.sh",
+    "stop": "docker compose down"
   }
 }

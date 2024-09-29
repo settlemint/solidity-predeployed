@@ -1,10 +1,20 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-const SettleMintERC20Module = buildModule("SettleMintERC20Module", (m) => {
-  const erc20 = m.contract("SettleMintERC20");
-  const erc1155 = m.contract("SettleMintERC1155");
+const StarterKitModule = buildModule("StarterKitModule", (m) => {
+  const registry = m.contract("StarterKitERC20Registry");
+  const factory = m.contract("StarterKitERC20Factory", [registry]);
 
-  return { erc20,erc1155 };
+  return { registry,factory };
 });
 
-export default SettleMintERC20Module;
+const SeedModule = buildModule("SeedModule", (m) => {
+  const { registry, factory } = m.useModule(StarterKitModule);
+
+  // Create a new token using the factory
+  m.call(factory, "createToken", ["Example Token", "EXT", "This is an example token"]);
+
+
+  return { registry, factory };
+});
+
+export default SeedModule;
