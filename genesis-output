@@ -54,7 +54,7 @@ process_sol_file() {
     echo "$STORAGE_LAYOUT" | jq -c '.storage[]' | while read -r slot; do
         local SLOT_NUMBER=$(echo "$slot" | jq -r .slot)
         local SLOT_VALUE=$(cast storage "$DEPLOYED_ADDRESS" "$SLOT_NUMBER")
-        STORAGE_JSON=$(echo "$STORAGE_JSON" | jq --arg slot "0x$SLOT_NUMBER" --arg value "$SLOT_VALUE" '. + {($slot): $value}')
+        STORAGE_JSON=$(echo "$STORAGE_JSON" | jq --arg slot "0x000000000000000000000000000000000000000000000000000000000000000$SLOT_NUMBER" --arg value "$SLOT_VALUE" '. + {($slot): $value}')
     done
 
         # Get bytecode from the deployed contract
