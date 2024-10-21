@@ -166,6 +166,8 @@ type TokenVolumeStats @aggregation(intervals: ["hour", "day"], source: "TokenVol
 	id: Int8!
 	"The timestamp of the aggregation"
 	timestamp: Timestamp!
+	"The token this aggregation is for"
+	token: ERC20Contract!
 	"The total number of transfers in the aggregation period"
 	totalTransfers: Int! @aggregate(fn: "sum", arg: "transferCount")
 	"The total volume for the aggregation period"
