@@ -35,7 +35,7 @@
   ],
   "dependencies": {
     "@nomicfoundation/hardhat-foundry": "1.1.2",
-    "@nomicfoundation/hardhat-ignition-viem": "0.15.6",
+    "@nomicfoundation/hardhat-ignition-viem": "0.15.7",
     "@nomicfoundation/hardhat-toolbox-viem": "3.0.0",
     "@graphprotocol/graph-cli": "0.87.0",
     "@graphprotocol/graph-ts": "0.35.1",
