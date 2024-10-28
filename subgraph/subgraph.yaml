@@ -20,18 +20,16 @@ dataSources:
         - ERC20Approval
         - ERC20Transfer
         - Transaction
-        - TokenVolume
-        - TokenSale
-        - TokenPurchase
-        - TokenDeposit
-        - TokenWithdrawal
-        - TokenSales
-        - TokenSaleStateChange
-        - TokenSalePriceUpdate
-        - PortfolioSnapshot
-        - TokenVolumeStats
-        - TokenSaleStats
-        - PortfolioStats
+        - ERC20TokenVolume
+        - ERC20PortfolioSnapshot
+        - ERC20DexPair
+        - ERC20DexMint
+        - ERC20DexBurn
+        - ERC20DexSwap
+        - ERC20DexPairSnapshot
+        - ERC20TokenVolumeStats
+        - ERC20PortfolioStats
+        - ERC20DexPairStats
       abis:
         - name: StarterKitERC20Factory
           file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
@@ -39,22 +37,20 @@ dataSources:
           file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
         - name: StarterKitERC20
           file: ../out/StarterKitERC20.sol/StarterKitERC20.json
-        - name: StarterKitERC20Sale
-          file: ../out/StarterKitERC20Sale.sol/StarterKitERC20Sale.json
-        - name: StarterKitERC20SaleFactory
-          file: ../out/StarterKitERC20SaleFactory.sol/StarterKitERC20SaleFactory.json
-        - name: StarterKitERC20SaleRegistry
-          file: ../out/StarterKitERC20SaleRegistry.sol/StarterKitERC20SaleRegistry.json
+        - name: StarterKitERC20DexFactory
+          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
+        - name: StarterKitERC20Dex
+          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
       eventHandlers:
         - event: TokenAdded(address,string,string,string,address)
           handler: handleTokenAdded
       file: ./src/datasources/erc20-registry.ts
   - kind: ethereum/contract
-    name: saleregistry
+    name: StarterKitERC20DexFactory
     network: settlemint
     source:
       address: "0x5e771e1417100000000000000000000000000003"
-      abi: StarterKitERC20SaleRegistry
+      abi: StarterKitERC20DexFactory
       startBlock: 0
     mapping:
       kind: ethereum/events
@@ -67,18 +63,16 @@ dataSources:
         - ERC20Approval
         - ERC20Transfer
         - Transaction
-        - TokenVolume
-        - TokenSale
-        - TokenPurchase
-        - TokenDeposit
-        - TokenWithdrawal
-        - TokenSales
-        - TokenSaleStateChange
-        - TokenSalePriceUpdate
-        - PortfolioSnapshot
-        - TokenVolumeStats
-        - TokenSaleStats
-        - PortfolioStats
+        - ERC20TokenVolume
+        - ERC20PortfolioSnapshot
+        - ERC20DexPair
+        - ERC20DexMint
+        - ERC20DexBurn
+        - ERC20DexSwap
+        - ERC20DexPairSnapshot
+        - ERC20TokenVolumeStats
+        - ERC20PortfolioStats
+        - ERC20DexPairStats
       abis:
         - name: StarterKitERC20Factory
           file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
@@ -86,16 +80,14 @@ dataSources:
           file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
         - name: StarterKitERC20
           file: ../out/StarterKitERC20.sol/StarterKitERC20.json
-        - name: StarterKitERC20Sale
-          file: ../out/StarterKitERC20Sale.sol/StarterKitERC20Sale.json
-        - name: StarterKitERC20SaleFactory
-          file: ../out/StarterKitERC20SaleFactory.sol/StarterKitERC20SaleFactory.json
-        - name: StarterKitERC20SaleRegistry
-          file: ../out/StarterKitERC20SaleRegistry.sol/StarterKitERC20SaleRegistry.json
+        - name: StarterKitERC20DexFactory
+          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
+        - name: StarterKitERC20Dex
+          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
       eventHandlers:
-        - event: SaleAdded(indexed address)
-          handler: handleSaleAdded
-      file: ./src/datasources/erc20-sale-registry.ts
+        - event: PairCreated(indexed address,indexed address,address,uint256)
+          handler: handlePairCreated
+      file: ./src/datasources/dex-factory.ts
 templates:
   - kind: ethereum/contract
     name: token
@@ -113,18 +105,16 @@ templates:
         - ERC20Approval
         - ERC20Transfer
         - Transaction
-        - TokenVolume
-        - TokenSale
-        - TokenPurchase
-        - TokenDeposit
-        - TokenWithdrawal
-        - TokenSales
-        - TokenSaleStateChange
-        - TokenSalePriceUpdate
-        - PortfolioSnapshot
-        - TokenVolumeStats
-        - TokenSaleStats
-        - PortfolioStats
+        - ERC20TokenVolume
+        - ERC20PortfolioSnapshot
+        - ERC20DexPair
+        - ERC20DexMint
+        - ERC20DexBurn
+        - ERC20DexSwap
+        - ERC20DexPairSnapshot
+        - ERC20TokenVolumeStats
+        - ERC20PortfolioStats
+        - ERC20DexPairStats
       abis:
         - name: StarterKitERC20
           file: ../out/StarterKitERC20.sol/StarterKitERC20.json
@@ -135,10 +125,10 @@ templates:
           handler: handleTransfer
       file: ./src/datasources/erc20.ts
   - kind: ethereum/contract
-    name: sale
+    name: StarterKitERC20Dex
     network: settlemint
     source:
-      abi: StarterKitERC20Sale
+      abi: StarterKitERC20Dex
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -150,35 +140,28 @@ templates:
         - ERC20Approval
         - ERC20Transfer
         - Transaction
-        - TokenVolume
-        - TokenSale
-        - TokenPurchase
-        - TokenDeposit
-        - TokenWithdrawal
-        - TokenSales
-        - TokenSaleStateChange
-        - TokenSalePriceUpdate
-        - PortfolioSnapshot
-        - TokenVolumeStats
-        - TokenSaleStats
-        - PortfolioStats
+        - ERC20TokenVolume
+        - ERC20PortfolioSnapshot
+        - ERC20DexPair
+        - ERC20DexMint
+        - ERC20DexBurn
+        - ERC20DexSwap
+        - ERC20DexPairSnapshot
+        - ERC20TokenVolumeStats
+        - ERC20PortfolioStats
+        - ERC20DexPairStats
       abis:
-        - name: StarterKitERC20Sale
-          file: ../out/StarterKitERC20Sale.sol/StarterKitERC20Sale.json
+        - name: StarterKitERC20Dex
+          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
       eventHandlers:
-        - event: TokensPurchased(indexed address,uint256,uint256)
-          handler: handleTokensPurchased
-        - event: TokensDeposited(indexed address,uint256)
-          handler: handleTokensDeposited
-        - event: TokensWithdrawn(indexed address,uint256)
-          handler: handleTokensWithdrawn
-        - event: SaleStatusUpdated(bool)
-          handler: handleSaleStatusUpdated
-        - event: PriceUpdated(uint256)
-          handler: handlePriceUpdated
-        - event: PurchaseLimitsUpdated(uint256,uint256)
-          handler: handlePurchaseLimitsUpdated
-      file: ./src/datasources/erc20-sale.ts
+        - event: Mint(indexed address,uint256,uint256)
+          handler: handleMint
+        - event: Burn(indexed address,uint256,uint256,indexed address)
+          handler: handleBurn
+        - event: Swap(indexed address,uint256,uint256,uint256,uint256,indexed address)
+          handler: handleSwap
+      file: ./src/datasources/dex-pair.ts
+
 features:
   - nonFatalErrors
   - fullTextSearch
