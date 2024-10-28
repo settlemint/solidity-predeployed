@@ -181,7 +181,7 @@ Represents a smart contract for token sales with configurable parameters
 """
 type TokenSale @entity {
 	"Contract address of the sale"
-	id: ID!
+	id: Bytes!
 	"Token being offered for sale"
 	tokenForSale: ERC20Contract!
 	"Token accepted as payment"

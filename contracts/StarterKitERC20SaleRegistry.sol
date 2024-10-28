@@ -2,29 +2,30 @@
 pragma solidity ^0.8.24;
 
 /// @title StarterKitERC20SaleRegistry
-/// @dev A contract for managing a registry of ERC20 token sales
-/// @notice This contract allows for the registration and retrieval of ERC20 token sales
+/// @notice Registry contract for tracking ERC20 token sales created by the StarterKitERC20SaleFactory
+/// @dev Maintains a list of sale contract addresses and provides lookup functionality
 /// @custom:security-contact security@settlemint.com
 contract StarterKitERC20SaleRegistry {
-    /// @notice Event emitted when a sale is added to the registry
-    /// @dev This event is triggered when a new sale is successfully registered
-    /// @param saleAddress The address of the sale contract being added
+    /// @notice Emitted when a new sale contract is registered
+    /// @param saleAddress The address of the newly registered sale contract
     event SaleAdded(address indexed saleAddress);
 
-    /// @dev Error thrown when a sale is already found in the registry
-    /// @param saleAddress The address of the sale that was found
+    /// @notice Thrown when attempting to register a sale address that already exists
+    /// @param saleAddress The duplicate sale address that was attempted to be registered
     error SaleAddressAlreadyExists(address saleAddress);
 
-    /// @dev The list of sales in the registry, the index to use for the array is 0-based
+    /// @notice Array storing all registered sale contract addresses
+    /// @dev Zero-based indexing
     address[] private sales;
 
-    /// @dev The index of a sale in the registry based on the address, the index to use for the array is 1-based
+    /// @notice Mapping of sale address to its index in the sales array
+    /// @dev One-based indexing (0 means not found)
     mapping(address => uint256) private addressToIndex;
 
-    /// @notice Adds a new sale to the registry
-    /// @dev Reverts if the sale address already exists in the registry
-    /// @param saleAddress The address of the sale to be added
-    /// @custom:throws SaleAddressAlreadyExists if the sale address is already registered
+    /// @notice Registers a new sale contract in the registry
+    /// @dev Only callable by the factory contract
+    /// @param saleAddress The address of the sale contract to register
+    /// @custom:throws SaleAddressAlreadyExists if the sale is already registered
     function addSale(address saleAddress) external {
         if (addressToIndex[saleAddress] != 0) revert SaleAddressAlreadyExists(saleAddress);
 
@@ -35,9 +36,8 @@ contract StarterKitERC20SaleRegistry {
         emit SaleAdded(saleAddress);
     }
 
-    /// @notice Retrieves the list of all sales in the registry
-    /// @dev Returns an array containing all registered sale addresses
-    /// @return An array of all sale addresses in the registry
+    /// @notice Gets all registered sale contract addresses
+    /// @return Array of all registered sale contract addresses
     function getSaleList() external view returns (address[] memory) {
         return sales;
     }
