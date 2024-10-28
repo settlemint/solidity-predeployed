@@ -482,12 +482,6 @@ type ERC20DexPairSnapshot @entity(timeseries: true) {
   "Volume in quote token units (raw)"
   volumeQuoteTokenExact: BigInt!
 
-  "Volume in USD value (decimal)"
-  volumeUSD: BigDecimal!
-
-  "Volume in USD value (raw)"
-  volumeUSDExact: BigInt!
-
   "Number of transactions in period"
   txCount: BigInt!
 }
@@ -517,9 +511,6 @@ type ERC20DexPairStats @aggregation(intervals: ["hour", "day"], source: "DexPair
 
   "Total quote token volume in period"
   totalVolumeQuoteToken: BigDecimal! @aggregate(fn: "sum", arg: "volumeQuoteToken")
-
-  "Total USD volume in period"
-  totalVolumeUSD: BigDecimal! @aggregate(fn: "sum", arg: "volumeUSD")
 
   "Highest base token price in period"
   highestBasePrice: BigDecimal! @aggregate(fn: "max", arg: "baseTokenPrice")

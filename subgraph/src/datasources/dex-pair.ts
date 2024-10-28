@@ -1,8 +1,8 @@
-import { transactions } from '@amxx/graphprotocol-utils'
-import { BigInt } from '@graphprotocol/graph-ts'
+import { constants, transactions } from '@amxx/graphprotocol-utils'
 import {
   ERC20DexBurn,
   ERC20DexMint,
+  ERC20DexPairSnapshot,
   ERC20DexSwap
 } from '../../generated/schema'
 import {
@@ -38,12 +38,31 @@ export function handleMint(event: MintEvent): void {
   pair.quoteReserve = pair.quoteReserveExact.toBigDecimal()
 
   // Update prices
-  if (pair.quoteReserveExact.gt(BigInt.fromI32(0))) {
+  if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
     pair.baseTokenPrice = pair.quoteReserve.div(pair.baseReserve)
     pair.quoteTokenPrice = pair.baseReserve.div(pair.quoteReserve)
   }
 
   pair.save()
+
+  let snapshot = new ERC20DexPairSnapshot("auto")
+  snapshot.pair = pair.id
+  snapshot.baseReserve = pair.baseReserve
+  snapshot.baseReserveExact = pair.baseReserveExact
+  snapshot.quoteReserve = pair.quoteReserve
+  snapshot.quoteReserveExact = pair.quoteReserveExact
+  snapshot.totalSupply = pair.totalSupply
+  snapshot.totalSupplyExact = pair.totalSupplyExact
+  snapshot.baseTokenPrice = pair.baseTokenPrice
+  snapshot.baseTokenPriceExact = pair.baseReserveExact
+  snapshot.quoteTokenPrice = pair.quoteTokenPrice
+  snapshot.quoteTokenPriceExact = pair.quoteReserveExact
+  snapshot.volumeBaseToken = event.params.baseAmount.toBigDecimal()
+  snapshot.volumeBaseTokenExact = event.params.baseAmount
+  snapshot.volumeQuoteToken = event.params.quoteAmount.toBigDecimal()
+  snapshot.volumeQuoteTokenExact = event.params.quoteAmount
+  snapshot.txCount = constants.BIGINT_ONE
+  snapshot.save()
 }
 
 export function handleBurn(event: BurnEvent): void {
@@ -71,12 +90,31 @@ export function handleBurn(event: BurnEvent): void {
   pair.quoteReserve = pair.quoteReserveExact.toBigDecimal()
 
   // Update prices
-  if (pair.quoteReserveExact.gt(BigInt.fromI32(0))) {
+  if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
     pair.baseTokenPrice = pair.quoteReserve.div(pair.baseReserve)
     pair.quoteTokenPrice = pair.baseReserve.div(pair.quoteReserve)
   }
 
   pair.save()
+
+  let snapshot = new ERC20DexPairSnapshot("auto")
+  snapshot.pair = pair.id
+  snapshot.baseReserve = pair.baseReserve
+  snapshot.baseReserveExact = pair.baseReserveExact
+  snapshot.quoteReserve = pair.quoteReserve
+  snapshot.quoteReserveExact = pair.quoteReserveExact
+  snapshot.totalSupply = pair.totalSupply
+  snapshot.totalSupplyExact = pair.totalSupplyExact
+  snapshot.baseTokenPrice = pair.baseTokenPrice
+  snapshot.baseTokenPriceExact = pair.baseReserveExact
+  snapshot.quoteTokenPrice = pair.quoteTokenPrice
+  snapshot.quoteTokenPriceExact = pair.quoteReserveExact
+  snapshot.volumeBaseToken = event.params.baseAmount.toBigDecimal()
+  snapshot.volumeBaseTokenExact = event.params.baseAmount
+  snapshot.volumeQuoteToken = event.params.quoteAmount.toBigDecimal()
+  snapshot.volumeQuoteTokenExact = event.params.quoteAmount
+  snapshot.txCount = constants.BIGINT_ONE
+  snapshot.save()
 }
 
 export function handleSwap(event: SwapEvent): void {
@@ -108,10 +146,29 @@ export function handleSwap(event: SwapEvent): void {
   pair.quoteReserve = pair.quoteReserveExact.toBigDecimal()
 
   // Update prices
-  if (pair.quoteReserveExact.gt(BigInt.fromI32(0))) {
+  if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
     pair.baseTokenPrice = pair.quoteReserve.div(pair.baseReserve)
     pair.quoteTokenPrice = pair.baseReserve.div(pair.quoteReserve)
   }
 
   pair.save()
+
+  let snapshot = new ERC20DexPairSnapshot("auto")
+  snapshot.pair = pair.id
+  snapshot.baseReserve = pair.baseReserve
+  snapshot.baseReserveExact = pair.baseReserveExact
+  snapshot.quoteReserve = pair.quoteReserve
+  snapshot.quoteReserveExact = pair.quoteReserveExact
+  snapshot.totalSupply = pair.totalSupply
+  snapshot.totalSupplyExact = pair.totalSupplyExact
+  snapshot.baseTokenPrice = pair.baseTokenPrice
+  snapshot.baseTokenPriceExact = pair.baseReserveExact
+  snapshot.quoteTokenPrice = pair.quoteTokenPrice
+  snapshot.quoteTokenPriceExact = pair.quoteReserveExact
+  snapshot.volumeBaseToken = event.params.baseAmountIn.plus(event.params.baseAmountOut).toBigDecimal()
+  snapshot.volumeBaseTokenExact = event.params.baseAmountIn.plus(event.params.baseAmountOut)
+  snapshot.volumeQuoteToken = event.params.quoteAmountIn.plus(event.params.quoteAmountOut).toBigDecimal()
+  snapshot.volumeQuoteTokenExact = event.params.quoteAmountIn.plus(event.params.quoteAmountOut)
+  snapshot.txCount = constants.BIGINT_ONE
+  snapshot.save()
 }
