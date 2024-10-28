@@ -24,12 +24,18 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
     error ZeroAddress();
     error InvalidERC20();
 
-    event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount);
+    event Mint(
+        address indexed sender,
+        uint256 baseAmount,
+        uint256 quoteAmount,
+        uint256 liquidity
+    );
     event Burn(
         address indexed sender,
         uint256 baseAmount,
         uint256 quoteAmount,
-        address indexed to
+        address indexed to,
+        uint256 liquidity
     );
     event Swap(
         address indexed sender,
@@ -115,7 +121,7 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
             quoteTokenContract.transferFrom(msg.sender, address(this), quoteAmount);
             _liquidity = baseAmount;
             _mint(msg.sender, _liquidity);
-            emit Mint(msg.sender, baseAmount, quoteAmount);
+            emit Mint(msg.sender, baseAmount, quoteAmount, _liquidity);
         } else {
             if (baseBalance == 0 || quoteBalance == 0) {
                 revert InvalidReserves();
@@ -129,7 +135,7 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
             _liquidity = (totalSupply() * baseAmount) / baseBalance;
             if (_liquidity == 0) revert InsufficientLiquidityMinted();
             _mint(msg.sender, _liquidity);
-            emit Mint(msg.sender, baseAmount, quoteAmount);
+            emit Mint(msg.sender, baseAmount, quoteAmount, _liquidity);
         }
         return _liquidity;
     }
@@ -153,7 +159,7 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         IERC20(baseToken).safeTransfer(msg.sender, baseAmount);
         IERC20(quoteToken).safeTransfer(msg.sender, quoteAmount);
 
-        emit Burn(msg.sender, baseAmount, quoteAmount, msg.sender);
+        emit Burn(msg.sender, baseAmount, quoteAmount, msg.sender, amount);
         return (baseAmount, quoteAmount);
     }
 

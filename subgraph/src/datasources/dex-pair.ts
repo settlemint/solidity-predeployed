@@ -1,21 +1,25 @@
-import { constants, transactions } from '@amxx/graphprotocol-utils'
+import { constants, decimals, transactions } from '@amxx/graphprotocol-utils';
+import { Address } from '@graphprotocol/graph-ts';
 import {
   ERC20DexBurn,
   ERC20DexMint,
   ERC20DexPairSnapshot,
   ERC20DexSwap
-} from '../../generated/schema'
+} from '../../generated/schema';
 import {
   Burn as BurnEvent,
   Mint as MintEvent,
   Swap as SwapEvent
-} from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex'
-import { fetchAccount } from '../fetch/account'
-import { fetchDex } from '../fetch/dex'
+} from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex';
+import { fetchAccount } from '../fetch/account';
+import { fetchDex } from '../fetch/dex';
+import { fetchERC20 } from '../fetch/erc20';
 
 export function handleMint(event: MintEvent): void {
   let pair = fetchDex(event.address)
   let sender = fetchAccount(event.params.sender)
+  let baseContract = fetchERC20(Address.fromBytes(pair.baseToken))
+  let quoteContract = fetchERC20(Address.fromBytes(pair.quoteToken))
 
   let mint = new ERC20DexMint(event.transaction.hash.toHexString())
   mint.pair = pair.id
@@ -25,17 +29,19 @@ export function handleMint(event: MintEvent): void {
   mint.emitter = event.address
 
   mint.baseAmountExact = event.params.baseAmount
-  mint.baseAmount = event.params.baseAmount.toBigDecimal()
+  mint.baseAmount = decimals.toDecimals(mint.baseAmountExact, baseContract.decimals)
   mint.quoteAmountExact = event.params.quoteAmount
-  mint.quoteAmount = event.params.quoteAmount.toBigDecimal()
+  mint.quoteAmount = decimals.toDecimals(mint.quoteAmountExact, quoteContract.decimals)
+  mint.liquidityExact = event.params.liquidity
+  mint.liquidity = decimals.toDecimals(mint.liquidityExact, baseContract.decimals)
 
   mint.save()
 
   // Update pair reserves
   pair.baseReserveExact = pair.baseReserveExact.plus(event.params.baseAmount)
-  pair.baseReserve = pair.baseReserveExact.toBigDecimal()
+  pair.baseReserve = decimals.toDecimals(pair.baseReserveExact, baseContract.decimals)
   pair.quoteReserveExact = pair.quoteReserveExact.plus(event.params.quoteAmount)
-  pair.quoteReserve = pair.quoteReserveExact.toBigDecimal()
+  pair.quoteReserve = decimals.toDecimals(pair.quoteReserveExact, quoteContract.decimals)
 
   // Update prices
   if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
@@ -62,12 +68,16 @@ export function handleMint(event: MintEvent): void {
   snapshot.volumeQuoteToken = event.params.quoteAmount.toBigDecimal()
   snapshot.volumeQuoteTokenExact = event.params.quoteAmount
   snapshot.txCount = constants.BIGINT_ONE
+  snapshot.liquidity = event.params.liquidity.toBigDecimal()
+  snapshot.liquidityExact = event.params.liquidity
   snapshot.save()
 }
 
 export function handleBurn(event: BurnEvent): void {
   let pair = fetchDex(event.address)
   let sender = fetchAccount(event.params.sender)
+  let baseContract = fetchERC20(Address.fromBytes(pair.baseToken))
+  let quoteContract = fetchERC20(Address.fromBytes(pair.quoteToken))
 
   let burn = new ERC20DexBurn(event.transaction.hash.toHexString())
   burn.pair = pair.id
@@ -77,17 +87,19 @@ export function handleBurn(event: BurnEvent): void {
   burn.emitter = event.address
 
   burn.baseAmountExact = event.params.baseAmount
-  burn.baseAmount = event.params.baseAmount.toBigDecimal()
+  burn.baseAmount = decimals.toDecimals(burn.baseAmountExact, baseContract.decimals)
   burn.quoteAmountExact = event.params.quoteAmount
-  burn.quoteAmount = event.params.quoteAmount.toBigDecimal()
+  burn.quoteAmount = decimals.toDecimals(burn.quoteAmountExact, quoteContract.decimals)
+  burn.liquidityExact = event.params.liquidity
+  burn.liquidity = decimals.toDecimals(burn.liquidityExact, baseContract.decimals)
 
   burn.save()
 
   // Update pair reserves
-  pair.baseReserveExact = pair.baseReserveExact.minus(event.params.baseAmount)
-  pair.baseReserve = pair.baseReserveExact.toBigDecimal()
-  pair.quoteReserveExact = pair.quoteReserveExact.minus(event.params.quoteAmount)
-  pair.quoteReserve = pair.quoteReserveExact.toBigDecimal()
+  pair.baseReserveExact = pair.baseReserveExact.minus(burn.baseAmountExact)
+  pair.baseReserve = decimals.toDecimals(pair.baseReserveExact, baseContract.decimals)
+  pair.quoteReserveExact = pair.quoteReserveExact.minus(burn.quoteAmountExact)
+  pair.quoteReserve = decimals.toDecimals(pair.quoteReserveExact, quoteContract.decimals)
 
   // Update prices
   if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
@@ -114,12 +126,16 @@ export function handleBurn(event: BurnEvent): void {
   snapshot.volumeQuoteToken = event.params.quoteAmount.toBigDecimal()
   snapshot.volumeQuoteTokenExact = event.params.quoteAmount
   snapshot.txCount = constants.BIGINT_ONE
+  snapshot.liquidity = event.params.liquidity.toBigDecimal()
+  snapshot.liquidityExact = event.params.liquidity
   snapshot.save()
 }
 
 export function handleSwap(event: SwapEvent): void {
   let pair = fetchDex(event.address)
   let sender = fetchAccount(event.params.sender)
+  let baseContract = fetchERC20(Address.fromBytes(pair.baseToken))
+  let quoteContract = fetchERC20(Address.fromBytes(pair.quoteToken))
 
   let swap = new ERC20DexSwap(event.transaction.hash.toHexString())
   swap.pair = pair.id
@@ -129,21 +145,21 @@ export function handleSwap(event: SwapEvent): void {
   swap.emitter = event.address
 
   swap.baseAmountInExact = event.params.baseAmountIn
-  swap.baseAmountIn = event.params.baseAmountIn.toBigDecimal()
+  swap.baseAmountIn = decimals.toDecimals(swap.baseAmountInExact, baseContract.decimals)
   swap.quoteAmountInExact = event.params.quoteAmountIn
-  swap.quoteAmountIn = event.params.quoteAmountIn.toBigDecimal()
+  swap.quoteAmountIn = decimals.toDecimals(swap.quoteAmountInExact, quoteContract.decimals)
   swap.baseAmountOutExact = event.params.baseAmountOut
-  swap.baseAmountOut = event.params.baseAmountOut.toBigDecimal()
+  swap.baseAmountOut = decimals.toDecimals(swap.baseAmountOutExact, baseContract.decimals)
   swap.quoteAmountOutExact = event.params.quoteAmountOut
-  swap.quoteAmountOut = event.params.quoteAmountOut.toBigDecimal()
+  swap.quoteAmountOut = decimals.toDecimals(swap.quoteAmountOutExact, quoteContract.decimals)
 
   swap.save()
 
   // Update pair reserves
   pair.baseReserveExact = pair.baseReserveExact.plus(event.params.baseAmountIn).minus(event.params.baseAmountOut)
-  pair.baseReserve = pair.baseReserveExact.toBigDecimal()
+  pair.baseReserve = decimals.toDecimals(pair.baseReserveExact, baseContract.decimals)
   pair.quoteReserveExact = pair.quoteReserveExact.plus(event.params.quoteAmountIn).minus(event.params.quoteAmountOut)
-  pair.quoteReserve = pair.quoteReserveExact.toBigDecimal()
+  pair.quoteReserve = decimals.toDecimals(pair.quoteReserveExact, quoteContract.decimals)
 
   // Update prices
   if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
@@ -169,6 +185,8 @@ export function handleSwap(event: SwapEvent): void {
   snapshot.volumeBaseTokenExact = event.params.baseAmountIn.plus(event.params.baseAmountOut)
   snapshot.volumeQuoteToken = event.params.quoteAmountIn.plus(event.params.quoteAmountOut).toBigDecimal()
   snapshot.volumeQuoteTokenExact = event.params.quoteAmountIn.plus(event.params.quoteAmountOut)
+  snapshot.liquidity = constants.BIGDECIMAL_ZERO
+  snapshot.liquidityExact = constants.BIGINT_ZERO
   snapshot.txCount = constants.BIGINT_ONE
   snapshot.save()
 }

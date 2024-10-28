@@ -116,8 +116,16 @@ templates:
         - ERC20PortfolioStats
         - ERC20DexPairStats
       abis:
+        - name: StarterKitERC20Factory
+          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
+        - name: StarterKitERC20Registry
+          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
         - name: StarterKitERC20
           file: ../out/StarterKitERC20.sol/StarterKitERC20.json
+        - name: StarterKitERC20DexFactory
+          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
+        - name: StarterKitERC20Dex
+          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
       eventHandlers:
         - event: Approval(indexed address,indexed address,uint256)
           handler: handleApproval
@@ -151,17 +159,24 @@ templates:
         - ERC20PortfolioStats
         - ERC20DexPairStats
       abis:
+        - name: StarterKitERC20Factory
+          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
+        - name: StarterKitERC20Registry
+          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
+        - name: StarterKitERC20
+          file: ../out/StarterKitERC20.sol/StarterKitERC20.json
+        - name: StarterKitERC20DexFactory
+          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
         - name: StarterKitERC20Dex
           file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
       eventHandlers:
-        - event: Mint(indexed address,uint256,uint256)
+        - event: Mint(indexed address,uint256,uint256,uint256)
           handler: handleMint
-        - event: Burn(indexed address,uint256,uint256,indexed address)
+        - event: Burn(indexed address,uint256,uint256,indexed address,uint256)
           handler: handleBurn
         - event: Swap(indexed address,uint256,uint256,uint256,uint256,indexed address)
           handler: handleSwap
       file: ./src/datasources/dex-pair.ts
-
 features:
   - nonFatalErrors
   - fullTextSearch

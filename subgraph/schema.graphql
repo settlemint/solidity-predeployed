@@ -226,7 +226,7 @@ type ERC20TokenVolume @entity(timeseries: true) {
 Aggregated token transfer statistics over configurable time periods.
 Provides summarized metrics about token transfer activity for analysis.
 """
-type ERC20TokenVolumeStats @aggregation(intervals: ["hour", "day"], source: "TokenVolume") {
+type ERC20TokenVolumeStats @aggregation(intervals: ["hour", "day"], source: "ERC20TokenVolume") {
   "Sequential numeric identifier"
   id: Int8!
 
@@ -484,13 +484,19 @@ type ERC20DexPairSnapshot @entity(timeseries: true) {
 
   "Number of transactions in period"
   txCount: BigInt!
+
+  "Amount of LP tokens minted (decimal)"
+  liquidity: BigDecimal!
+
+  "Amount of LP tokens minted (raw)"
+  liquidityExact: BigInt!
 }
 
 """
 Aggregated DEX pair metrics over configurable time periods.
 Provides statistical analysis of pair activity including volume, prices, and reserves.
 """
-type ERC20DexPairStats @aggregation(intervals: ["hour", "day"], source: "DexPairSnapshot") {
+type ERC20DexPairStats @aggregation(intervals: ["hour", "day"], source: "ERC20DexPairSnapshot") {
   "Sequential numeric identifier"
   id: Int8!
 
@@ -538,4 +544,8 @@ type ERC20DexPairStats @aggregation(intervals: ["hour", "day"], source: "DexPair
 
   "Total number of transactions in period"
   totalTxCount: BigInt! @aggregate(fn: "sum", arg: "txCount")
+
+  "Amount of LP tokens minted in period"
+  totalLiquidity: BigDecimal! @aggregate(fn: "sum", arg: "liquidity")
 }
+
