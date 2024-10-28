@@ -1,175 +1,409 @@
 """
-Represents an account in the system, which can be either a user or a contract
+Represents an account in the system, which can be either a user or a contract address. Accounts can hold ERC20 tokens, approve token spending, and participate in token transfers.
 """
 type Account @entity {
-	"Unique identifier for the account, typically the Ethereum address"
+	"Unique Ethereum address that identifies this account"
 	id: Bytes!
-	"Reference to the ERC20Contract if this account is an ERC20 token contract"
+	"Links to ERC20Contract entity if this account is an ERC20 token contract"
 	asERC20: ERC20Contract
-	"List of ERC20 token balances associated with this account"
+	"All ERC20 token balances held by this account"
 	ERC20balances: [ERC20Balance!]! @derivedFrom(field: "account")
-	"ERC20 token approvals where this account is the owner"
+	"All ERC20 token spending approvals granted by this account"
 	ERC20approvalsOwner: [ERC20Approval!]! @derivedFrom(field: "owner")
-	"ERC20 token approvals where this account is the spender"
+	"All ERC20 token spending approvals received by this account"
 	ERC20approvalsSpender: [ERC20Approval!]! @derivedFrom(field: "spender")
-	"ERC20 token transfers where this account is the sender"
+	"All outgoing ERC20 token transfers from this account"
 	ERC20transferFromEvent: [ERC20Transfer!]! @derivedFrom(field: "from")
-	"ERC20 token transfers where this account is the recipient"
+	"All incoming ERC20 token transfers to this account"
 	ERC20transferToEvent: [ERC20Transfer!]! @derivedFrom(field: "to")
-	"All events emitted by this account"
+	"All blockchain events where this account is the emitter"
 	events: [Event!]! @derivedFrom(field: "emitter")
 }
 
 """
-Represents an ERC20 token contract
+Represents an ERC20 token contract with its standard properties, supply information, and related entities like balances, approvals and transfers
 """
 type ERC20Contract @entity {
 	"Contract address of the ERC20 token"
 	id: Bytes!
-	"Reference to the Account entity representing this contract"
+	"Links to the Account entity representing this contract address"
 	asAccount: Account!
-	"Name of the ERC20 token"
+	"Official name of the token"
 	name: String
-	"Symbol of the ERC20 token"
+	"Trading symbol/ticker of the token"
 	symbol: String
-	"Number of decimal places for token amounts"
+	"Number of decimal places for token amount representation"
 	decimals: Int!
-	"Additional data associated with the token"
+	"Additional metadata or custom information about the token"
 	extraData: String
-	"Current total supply of the token"
+	"Current total token supply in decimal format"
 	totalSupply: BigDecimal!
-	"Current total supply of the token"
+	"Current total token supply as raw integer value"
 	totalSupplyExact: BigInt!
-	"List of all balances for this token"
+	"All holder balances for this token"
 	balances: [ERC20Balance!]! @derivedFrom(field: "contract")
-	"List of all approvals for this token"
+	"All spending approvals for this token"
 	approvals: [ERC20Approval!]! @derivedFrom(field: "contract")
-	"List of all transfers for this token"
+	"All transfer events involving this token"
 	transfers: [ERC20Transfer!]! @derivedFrom(field: "contract")
+	"All sale contracts where this token is being sold"
+	sales: [TokenSale!]! @derivedFrom(field: "tokenForSale")
 }
 
 """
-Represents the balance of an ERC20 token for a specific account
+Tracks an account's balance of a specific ERC20 token, including transfer history
 """
 type ERC20Balance @entity {
-	"Unique identifier for the balance (typically contract address + account address)"
+	"Composite identifier combining token contract and holder account addresses"
 	id: ID!
-	"The ERC20 token contract this balance is for"
+	"The ERC20 token contract"
 	contract: ERC20Contract!
 	"The account holding this balance"
 	account: Account
-	"The balance amount in decimal form"
+	"Current balance in decimal format"
 	value: BigDecimal!
-	"The exact balance amount as a BigInt"
+	"Current balance as raw integer value"
 	valueExact: BigInt!
-	"Transfers where this balance is the source"
+	"History of outgoing transfers affecting this balance"
 	transferFromEvent: [ERC20Transfer!]! @derivedFrom(field: "fromBalance")
-	"Transfers where this balance is the destination"
+	"History of incoming transfers affecting this balance"
 	transferToEvent: [ERC20Transfer!]! @derivedFrom(field: "toBalance")
 }
 
 """
-Represents an approval for an ERC20 token
+Records an approval for delegated ERC20 token spending between accounts
 """
 type ERC20Approval @entity {
-	"Unique identifier for the approval"
+	"Unique identifier for this approval"
 	id: ID!
-	"The ERC20 token contract this approval is for"
+	"The ERC20 token contract"
 	contract: ERC20Contract!
-	"The account that granted the approval"
+	"Account granting the approval"
 	owner: Account!
-	"The account that received the approval to spend"
+	"Account receiving spending permission"
 	spender: Account!
-	"The approved amount in decimal form"
+	"Approved amount in decimal format"
 	value: BigDecimal!
-	"The exact approved amount as a BigInt"
+	"Approved amount as raw integer value"
 	valueExact: BigInt!
 }
 
 """
-Represents a transfer of an ERC20 token
+Records an ERC20 token transfer between accounts with full context
 """
 type ERC20Transfer implements Event @entity(immutable: true) {
-	"Unique identifier for the transfer event"
+	"Unique identifier for this transfer event"
 	id: ID!
-	"The account that emitted this transfer event"
+	"Contract that emitted the transfer event"
 	emitter: Account!
-	"The transaction in which this transfer occurred"
+	"Transaction containing this transfer"
 	transaction: Transaction!
-	"The timestamp of the transfer"
+	"Block timestamp of the transfer"
 	timestamp: BigInt!
-	"The ERC20 token contract involved in the transfer"
+	"The ERC20 token being transferred"
 	contract: ERC20Contract!
-	"The sender's account"
+	"Sending account"
 	from: Account
-	"The sender's balance before the transfer"
+	"Sender's balance record pre-transfer"
 	fromBalance: ERC20Balance
-	"The recipient's account"
+	"Receiving account"
 	to: Account
-	"The recipient's balance after the transfer"
+	"Receiver's balance record post-transfer"
 	toBalance: ERC20Balance
-	"The transferred amount in decimal form"
+	"Transfer amount in decimal format"
 	value: BigDecimal!
-	"The exact transferred amount as a BigInt"
+	"Transfer amount as raw integer value"
 	valueExact: BigInt!
 }
 
 """
-Represents a generic event interface
+Common interface for all blockchain events providing core event data
 """
 interface Event {
-	"Unique identifier for the event"
+	"Unique event identifier"
 	id: ID!
-	"The transaction in which this event occurred"
+	"Transaction containing the event"
 	transaction: Transaction!
-	"The account that emitted this event"
+	"Contract that emitted the event"
 	emitter: Account!
-	"The timestamp of the event"
+	"Block timestamp of the event"
 	timestamp: BigInt!
 }
 
 """
-Represents a transaction on the blockchain
+Records an Ethereum transaction and aggregates its associated events
 """
 type Transaction @entity(immutable: true) {
-	"Transaction hash"
+	"Transaction hash identifier"
 	id: ID!
-	"Timestamp of the transaction"
+	"Block timestamp when transaction was mined"
 	timestamp: BigInt!
-	"Block number in which the transaction was included"
+	"Block number containing the transaction"
 	blockNumber: BigInt!
-	"List of events emitted in this transaction"
+	"All events emitted during this transaction"
 	events: [Event!]! @derivedFrom(field: "transaction")
 }
 
 """
-Represents the volume of a token over time
+Time-series tracking of token transfer activity metrics
 """
 type TokenVolume @entity(timeseries: true) {
-	"Unique identifier for the TokenVolume"
+	"Sequential numeric identifier"
 	id: Int8!
-	"The timestamp of the volume measurement"
+	"Timestamp of the volume record"
 	timestamp: Timestamp!
-	"The Token this volume is for"
+	"The ERC20 token being monitored"
 	token: ERC20Contract!
-	"The number of transfers in this time period"
+	"Number of transfers in period"
 	transferCount: Int!
-	"The volume of the token transferred"
+	"Total token amount transferred"
 	volume: BigInt!
 }
 
 """
-Represents aggregated statistics for token volume
+Aggregated token transfer statistics over configurable time periods
 """
 type TokenVolumeStats @aggregation(intervals: ["hour", "day"], source: "TokenVolume") {
-	"Unique identifier for the TokenVolumeStats"
+	"Sequential numeric identifier"
 	id: Int8!
-	"The timestamp of the aggregation"
+	"Start of aggregation period"
 	timestamp: Timestamp!
-	"The token this aggregation is for"
+	"The ERC20 token being analyzed"
 	token: ERC20Contract!
-	"The total number of transfers in the aggregation period"
+	"Total transfers in period"
 	totalTransfers: Int! @aggregate(fn: "sum", arg: "transferCount")
-	"The total volume for the aggregation period"
+	"Total volume transferred"
 	totalVolume: BigInt! @aggregate(fn: "sum", arg: "volume")
+}
+
+"""
+Represents a smart contract for token sales with configurable parameters
+"""
+type TokenSale @entity {
+	"Contract address of the sale"
+	id: ID!
+	"Token being offered for sale"
+	tokenForSale: ERC20Contract!
+	"Token accepted as payment"
+	tokenForPayment: ERC20Contract!
+	"Sale price per token in payment token units (decimal)"
+	pricePerToken: BigDecimal!
+	"Sale price per token in payment token units (raw)"
+	pricePerTokenExact: BigInt!
+	"Minimum purchase quantity"
+	minPurchase: BigInt!
+	"Maximum purchase quantity"
+	maxPurchase: BigInt!
+	"Current sale status"
+	saleActive: Boolean!
+	"Sale contract administrator"
+	owner: Account!
+	"History of token purchases"
+	purchases: [TokenPurchase!]! @derivedFrom(field: "sale")
+	"History of token deposits"
+	deposits: [TokenDeposit!]! @derivedFrom(field: "sale")
+	"History of token withdrawals"
+	withdrawals: [TokenWithdrawal!]! @derivedFrom(field: "sale")
+}
+
+"""
+Records a completed token purchase transaction
+"""
+type TokenPurchase implements Event @entity(immutable: true) {
+	"Unique identifier from transaction hash and log index"
+	id: ID!
+	"The sale contract used"
+	sale: TokenSale!
+	"Account making the purchase"
+	buyer: Account!
+	"Quantity of tokens purchased"
+	amount: BigInt!
+	"Total payment amount in payment tokens (decimal)"
+	cost: BigDecimal!
+	"Total payment amount in payment tokens (raw)"
+	costExact: BigInt!
+	"Block timestamp of purchase"
+	timestamp: BigInt!
+	"Transaction containing the purchase"
+	transaction: Transaction!
+}
+
+"""
+Records token deposits into sale contracts
+"""
+type TokenDeposit implements Event @entity(immutable: true) {
+	"Unique identifier from transaction hash and log index"
+	id: ID!
+	"Sale contract receiving tokens"
+	sale: TokenSale!
+	"Account depositing tokens"
+	sender: Account!
+	"Quantity of tokens deposited"
+	amount: BigInt!
+	"Block timestamp of deposit"
+	timestamp: BigInt!
+	"Transaction containing the deposit"
+	transaction: Transaction!
+}
+
+"""
+Records token withdrawals from sale contracts
+"""
+type TokenWithdrawal implements Event @entity(immutable: true) {
+	"Unique identifier from transaction hash and log index"
+	id: ID!
+	"Sale contract tokens withdrawn from"
+	sale: TokenSale!
+	"Account receiving withdrawn tokens"
+	receiver: Account!
+	"Quantity of tokens withdrawn"
+	amount: BigInt!
+	"Block timestamp of withdrawal"
+	timestamp: BigInt!
+	"Transaction containing the withdrawal"
+	transaction: Transaction!
+}
+
+"""
+Time-series tracking of token sale metrics and activity
+"""
+type TokenSales @entity(timeseries: true) {
+	"Sequential numeric identifier"
+	id: Int8!
+	"Timestamp of sales record"
+	timestamp: Timestamp!
+	"Token being tracked"
+	token: ERC20Contract!
+	"Current sale price (decimal)"
+	price: BigDecimal!
+	"Current sale price (raw)"
+	priceExact: BigInt!
+	"Total volume sold in period"
+	volume: BigInt!
+	"Number of sales completed"
+	saleCount: Int!
+}
+
+"""
+Aggregated token sale statistics over configurable time periods
+"""
+type TokenSaleStats @aggregation(intervals: ["hour", "day"], source: "TokenSales") {
+	"Sequential numeric identifier"
+	id: Int8!
+	"Start of aggregation period"
+	timestamp: Timestamp!
+	"Token being analyzed"
+	token: ERC20Contract!
+	"Total completed sales"
+	totalSales: Int! @aggregate(fn: "sum", arg: "saleCount")
+	"Total volume sold"
+	totalVolume: BigInt! @aggregate(fn: "sum", arg: "volume")
+	"Opening price in period (decimal)"
+	firstPrice: BigDecimal! @aggregate(fn: "first", arg: "price")
+	"Opening price in period (raw)"
+	firstPriceExact: BigInt! @aggregate(fn: "first", arg: "priceExact")
+	"Closing price in period (decimal)"
+	lastPrice: BigDecimal! @aggregate(fn: "last", arg: "price")
+	"Closing price in period (raw)"
+	lastPriceExact: BigInt! @aggregate(fn: "last", arg: "priceExact")
+	"Highest price reached (decimal)"
+	maxPrice: BigDecimal! @aggregate(fn: "max", arg: "price")
+	"Highest price reached (raw)"
+	maxPriceExact: BigInt! @aggregate(fn: "max", arg: "priceExact")
+	"Lowest price reached (decimal)"
+	minPrice: BigDecimal! @aggregate(fn: "min", arg: "price")
+	"Lowest price reached (raw)"
+	minPriceExact: BigInt! @aggregate(fn: "min", arg: "priceExact")
+}
+
+"""
+Records changes in sale contract activation status
+"""
+type TokenSaleStateChange implements Event @entity(immutable: true) {
+	"Unique identifier for state change event"
+	id: ID!
+	"Sale contract affected"
+	sale: TokenSale!
+	"Status before change"
+	previousState: Boolean!
+	"Status after change"
+	newState: Boolean!
+	"Block timestamp of change"
+	timestamp: BigInt!
+	"Transaction containing the change"
+	transaction: Transaction!
+	"Account triggering the change"
+	emitter: Account!
+}
+
+"""
+Records updates to sale contract pricing
+"""
+type TokenSalePriceUpdate implements Event @entity(immutable: true) {
+	"Unique identifier for price update event"
+	id: ID!
+	"Sale contract affected"
+	sale: TokenSale!
+	"Price before update (decimal)"
+	previousPrice: BigDecimal!
+	"Price before update (raw)"
+	previousPriceExact: BigInt!
+	"Price after update (decimal)"
+	newPrice: BigDecimal!
+	"Price after update (raw)"
+	newPriceExact: BigInt!
+	"Block timestamp of update"
+	timestamp: BigInt!
+	"Transaction containing the update"
+	transaction: Transaction!
+	"Account triggering the update"
+	emitter: Account!
+}
+
+"""
+Tracks portfolio value and composition over time
+"""
+type PortfolioSnapshot @entity(timeseries: true) {
+  "Sequential numeric identifier"
+  id: Int8!
+  "Timestamp of snapshot"
+  timestamp: Timestamp!
+  "Portfolio owner account"
+  account: Account!
+  "Total portfolio value in base token (decimal)"
+  totalValue: BigDecimal!
+  "Total portfolio value in base token (raw)"
+	totalValueExact: BigInt!
+  "Count of unique tokens held"
+  numTokens: Int!
+  "ETH balance in decimal format"
+  ethBalance: BigDecimal!
+  "ETH balance as raw integer"
+	ethBalanceExact: BigInt!
+}
+
+"""
+Aggregated portfolio metrics over configurable time periods
+"""
+type PortfolioStats @aggregation(intervals: ["hour", "day"], source: "PortfolioSnapshot") {
+  "Sequential numeric identifier"
+  id: Int8!
+  "Start of aggregation period"
+  timestamp: Timestamp!
+  "Total portfolio value sum"
+  sumTotalValue: BigDecimal! @aggregate(fn: "sum", arg: "totalValue")
+  "Total portfolio value sum (raw)"
+  sumTotalValueExact: BigInt! @aggregate(fn: "sum", arg: "totalValueExact")
+  "Number of snapshots taken"
+  countSnapshots: Int! @aggregate(fn: "count", arg: "id")
+  "Highest portfolio value"
+  maxTotalValue: BigDecimal! @aggregate(fn: "max", arg: "totalValue")
+  "Lowest portfolio value"
+  minTotalValue: BigDecimal! @aggregate(fn: "min", arg: "totalValue")
+  "Total token count sum"
+  sumNumTokens: Int! @aggregate(fn: "sum", arg: "numTokens")
+  "Total ETH balance sum"
+  sumEthBalance: BigDecimal! @aggregate(fn: "sum", arg: "ethBalance")
+  "Total ETH balance sum (raw)"
+  sumEthBalanceExact: BigInt! @aggregate(fn: "sum", arg: "ethBalanceExact")
 }
