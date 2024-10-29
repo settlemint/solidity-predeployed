@@ -45,7 +45,7 @@ export const DexModule = buildModule("DexModule", (m) => {
 
   const executeSwap = m.call(pair, "swapBaseToQuote", [
     10000000000000000000n,
-    6666666666666666666n,
+    222222222222222222n,
     deadline
   ], {
     id: "executeSwap",
