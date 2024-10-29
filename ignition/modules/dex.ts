@@ -44,8 +44,8 @@ export const DexModule = buildModule("DexModule", (m) => {
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour from now
 
   const executeSwap = m.call(pair, "swapBaseToQuote", [
-    10000000000000000000n,
-    222222222222222222n,
+    3000000000000000000n,
+    66666666666666667n,
     deadline
   ], {
     id: "executeSwap",
