@@ -4,7 +4,7 @@ export const ContractsModule = buildModule("ContractsModule", (m) => {
   const registry = m.contract("StarterKitERC20Registry");
   const factory = m.contract("StarterKitERC20Factory", [registry]);
 
-  const dexFactory = m.contract("StarterKitERC20DexFactory", [30]);
+  const dexFactory = m.contract("StarterKitERC20DexFactory");
 
   return { registry, factory, dexFactory };
 });
