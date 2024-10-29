@@ -427,6 +427,60 @@ type ERC20DexSwap implements Event @entity(immutable: true){
 }
 
 """
+Records an emergency withdrawal event from a DEX pair.
+Tracks the token and amount withdrawn in an emergency situation.
+"""
+type EmergencyWithdraw implements Event @entity(immutable: true) {
+  "Unique event identifier"
+  id: ID!
+
+  "Transaction containing the event"
+  transaction: Transaction!
+
+  "Contract that emitted the event"
+  emitter: Account!
+
+  "Block timestamp of the event"
+  timestamp: BigInt!
+
+  "The DEX pair the withdrawal was from"
+  pair: ERC20DexPair!
+
+  "The token that was withdrawn"
+  token: ERC20Contract!
+
+  "Amount of tokens withdrawn"
+  amount: BigInt!
+}
+
+"""
+Records a fee update event on a DEX pair.
+Tracks changes to the swap fee percentage.
+"""
+type FeeUpdate implements Event @entity(immutable: true) {
+  "Unique event identifier"
+  id: ID!
+
+  "Transaction containing the event"
+  transaction: Transaction!
+
+  "Contract that emitted the event"
+  emitter: Account!
+
+  "Block timestamp of the event"
+  timestamp: BigInt!
+
+  "The DEX pair whose fee was updated"
+  pair: ERC20DexPair!
+
+  "Previous swap fee in basis points"
+  oldFee: BigInt!
+
+  "New swap fee in basis points"
+  newFee: BigInt!
+}
+
+"""
 Time-series tracking of DEX pair metrics.
 Captures periodic snapshots of reserves, prices, volume and other key metrics.
 """

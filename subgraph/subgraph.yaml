@@ -176,6 +176,10 @@ templates:
           handler: handleBurn
         - event: Swap(indexed address,uint256,uint256,uint256,uint256,indexed address)
           handler: handleSwap
+        - event: FeeUpdated(uint256,uint256)
+          handler: handleFeeUpdated
+        - event: EmergencyWithdraw(address,uint256)
+          handler: handleEmergencyWithdraw
       file: ./src/datasources/dex-pair.ts
 features:
   - nonFatalErrors

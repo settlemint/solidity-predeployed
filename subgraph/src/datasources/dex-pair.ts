@@ -4,10 +4,14 @@ import {
   ERC20DexBurn,
   ERC20DexMint,
   ERC20DexPairSnapshot,
-  ERC20DexSwap
+  ERC20DexSwap,
+  EmergencyWithdraw,
+  FeeUpdate
 } from '../../generated/schema';
 import {
   Burn as BurnEvent,
+  EmergencyWithdraw as EmergencyWithdrawEvent,
+  FeeUpdated as FeeUpdatedEvent,
   Mint as MintEvent,
   Swap as SwapEvent
 } from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex';
@@ -189,4 +193,43 @@ export function handleSwap(event: SwapEvent): void {
   snapshot.liquidityExact = constants.BIGINT_ZERO
   snapshot.txCount = constants.BIGINT_ONE
   snapshot.save()
+}
+
+export function handleEmergencyWithdraw(event: EmergencyWithdrawEvent): void {
+  let pair = fetchDex(event.address)
+  let token = fetchERC20(event.params.token)
+
+  let withdraw = new EmergencyWithdraw(
+    event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  )
+
+  withdraw.pair = pair.id
+  withdraw.token = token.id
+  withdraw.amount = event.params.amount
+  withdraw.timestamp = event.block.timestamp
+  withdraw.transaction = transactions.log(event).id
+  withdraw.emitter = event.address
+
+  withdraw.save()
+  pair.save()
+}
+
+export function handleFeeUpdated(event: FeeUpdatedEvent): void {
+  let pair = fetchDex(event.address)
+
+  let feeUpdate = new FeeUpdate(
+    event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  )
+
+  feeUpdate.pair = pair.id
+  feeUpdate.oldFee = event.params.oldFee
+  feeUpdate.newFee = event.params.newFee
+  feeUpdate.timestamp = event.block.timestamp
+  feeUpdate.transaction = transactions.log(event).id
+  feeUpdate.emitter = event.address
+
+  pair.swapFee = event.params.newFee
+
+  feeUpdate.save()
+  pair.save()
 }
