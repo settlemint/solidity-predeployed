@@ -2,9 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { StarterKitERC20Dex } from "./StarterKitERC20Dex.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract StarterKitERC20DexFactory is Ownable {
+contract StarterKitERC20DexFactory {
     error InvalidToken();
     error PairExists();
     error IdenticalAddresses();
@@ -19,11 +18,6 @@ contract StarterKitERC20DexFactory is Ownable {
 
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
-    uint256 public initialFee;
-
-    constructor(uint256 _initialFee) Ownable(msg.sender) {
-        initialFee = _initialFee;
-    }
 
     function allPairsLength() external view returns (uint256) {
         return allPairs.length;
@@ -46,7 +40,7 @@ contract StarterKitERC20DexFactory is Ownable {
         StarterKitERC20Dex newPair = new StarterKitERC20Dex{salt: salt}(
             token0,
             token1,
-            initialFee,
+            100,
             msg.sender
         );
 
@@ -56,9 +50,5 @@ contract StarterKitERC20DexFactory is Ownable {
         allPairs.push(pair);
 
         emit PairCreated(token0, token1, pair, allPairs.length);
-    }
-
-    function setInitialFee(uint256 _newFee) external onlyOwner {
-        initialFee = _newFee;
     }
 }
