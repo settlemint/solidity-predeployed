@@ -41,20 +41,6 @@ export function handleMint(event: MintEvent): void {
 
   mint.save()
 
-  // Update pair reserves
-  pair.baseReserveExact = pair.baseReserveExact.plus(event.params.baseAmount)
-  pair.baseReserve = decimals.toDecimals(pair.baseReserveExact, baseContract.decimals)
-  pair.quoteReserveExact = pair.quoteReserveExact.plus(event.params.quoteAmount)
-  pair.quoteReserve = decimals.toDecimals(pair.quoteReserveExact, quoteContract.decimals)
-
-  // Update prices
-  if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
-    pair.baseTokenPrice = pair.quoteReserve.div(pair.baseReserve)
-    pair.quoteTokenPrice = pair.baseReserve.div(pair.quoteReserve)
-  }
-
-  pair.save()
-
   let snapshot = new ERC20DexPairSnapshot("auto")
   snapshot.pair = pair.id
   snapshot.baseReserve = pair.baseReserve
@@ -98,20 +84,6 @@ export function handleBurn(event: BurnEvent): void {
   burn.liquidity = decimals.toDecimals(burn.liquidityExact, baseContract.decimals)
 
   burn.save()
-
-  // Update pair reserves
-  pair.baseReserveExact = pair.baseReserveExact.minus(burn.baseAmountExact)
-  pair.baseReserve = decimals.toDecimals(pair.baseReserveExact, baseContract.decimals)
-  pair.quoteReserveExact = pair.quoteReserveExact.minus(burn.quoteAmountExact)
-  pair.quoteReserve = decimals.toDecimals(pair.quoteReserveExact, quoteContract.decimals)
-
-  // Update prices
-  if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
-    pair.baseTokenPrice = pair.quoteReserve.div(pair.baseReserve)
-    pair.quoteTokenPrice = pair.baseReserve.div(pair.quoteReserve)
-  }
-
-  pair.save()
 
   let snapshot = new ERC20DexPairSnapshot("auto")
   snapshot.pair = pair.id
@@ -158,20 +130,6 @@ export function handleSwap(event: SwapEvent): void {
   swap.quoteAmountOut = decimals.toDecimals(swap.quoteAmountOutExact, quoteContract.decimals)
 
   swap.save()
-
-  // Update pair reserves
-  pair.baseReserveExact = pair.baseReserveExact.plus(event.params.baseAmountIn).minus(event.params.baseAmountOut)
-  pair.baseReserve = decimals.toDecimals(pair.baseReserveExact, baseContract.decimals)
-  pair.quoteReserveExact = pair.quoteReserveExact.plus(event.params.quoteAmountIn).minus(event.params.quoteAmountOut)
-  pair.quoteReserve = decimals.toDecimals(pair.quoteReserveExact, quoteContract.decimals)
-
-  // Update prices
-  if (pair.quoteReserveExact.gt(constants.BIGINT_ZERO)) {
-    pair.baseTokenPrice = pair.quoteReserve.div(pair.baseReserve)
-    pair.quoteTokenPrice = pair.baseReserve.div(pair.quoteReserve)
-  }
-
-  pair.save()
 
   let snapshot = new ERC20DexPairSnapshot("auto")
   snapshot.pair = pair.id
@@ -227,9 +185,5 @@ export function handleFeeUpdated(event: FeeUpdatedEvent): void {
   feeUpdate.timestamp = event.block.timestamp
   feeUpdate.transaction = transactions.log(event).id
   feeUpdate.emitter = event.address
-
-  pair.swapFee = event.params.newFee
-
   feeUpdate.save()
-  pair.save()
 }

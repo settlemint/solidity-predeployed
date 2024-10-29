@@ -251,6 +251,18 @@ type ERC20DexPair @entity {
   "Unique identifier for the pair"
   id: Bytes!
 
+  "Links to the Account entity representing this contract address"
+  asAccount: Account!
+
+  "Official name of the token (e.g. 'Ethereum')"
+  name: String
+
+  "Trading symbol/ticker of the token (e.g. 'ETH')"
+  symbol: String
+
+  "Number of decimal places for token amount representation (e.g. 18 for ETH)"
+  decimals: Int!
+
   "The base token in the trading pair"
   baseToken: ERC20Contract!
 
