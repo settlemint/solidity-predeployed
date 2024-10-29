@@ -6,6 +6,7 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
     using SafeERC20 for IERC20;
@@ -23,6 +24,9 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
     error SlippageExceeded();
     error ZeroAddress();
     error InvalidERC20();
+    error TokenDecimalsMismatch();
+    error MaxTokenAmountExceeded();
+    error BalanceMismatch();
 
     event Mint(
         address indexed sender,
@@ -56,7 +60,10 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
     uint256 public constant MAX_FEE = 1000; // (10%)
 
     uint256 private constant MINIMUM_LIQUIDITY = 1000;
+    uint256 private constant AMOUNT_TOLERANCE = 100; // 0.01% tolerance for amount comparisons
     bool private unlocked = true;
+
+    uint256 public constant MAX_TOKEN_AMOUNT = type(uint128).max;
 
     modifier lock() {
         if (!unlocked) revert ContractLocked();
@@ -78,6 +85,11 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         // Verify both tokens are valid ERC20
         try IERC20(_baseToken).totalSupply() {} catch { revert InvalidERC20(); }
         try IERC20(_quoteToken).totalSupply() {} catch { revert InvalidERC20(); }
+
+        // Verify token decimals are compatible
+        uint8 baseDecimals = ERC20(_baseToken).decimals();
+        uint8 quoteDecimals = ERC20(_quoteToken).decimals();
+        if (baseDecimals != quoteDecimals) revert TokenDecimalsMismatch();
 
         baseToken = _baseToken;
         quoteToken = _quoteToken;
@@ -110,32 +122,46 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
     }
 
     function addLiquidity(uint256 baseAmount, uint256 quoteAmount) public lock returns (uint256) {
+        if (baseAmount > MAX_TOKEN_AMOUNT || quoteAmount > MAX_TOKEN_AMOUNT)
+            revert MaxTokenAmountExceeded();
+
         uint256 _liquidity;
         uint256 baseBalance = getBaseTokenBalance();
         uint256 quoteBalance = getQuoteTokenBalance();
-        ERC20 baseTokenContract = ERC20(baseToken);
-        ERC20 quoteTokenContract = ERC20(quoteToken);
 
         if (baseBalance == 0 && quoteBalance == 0) {
-            baseTokenContract.transferFrom(msg.sender, address(this), baseAmount);
-            quoteTokenContract.transferFrom(msg.sender, address(this), quoteAmount);
-            _liquidity = baseAmount;
-            _mint(msg.sender, _liquidity);
-            emit Mint(msg.sender, baseAmount, quoteAmount, _liquidity);
+            _liquidity = Math.sqrt(baseAmount * quoteAmount);
+            if (_liquidity <= MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
+
+            // Effects before interactions
+            _mint(address(1), MINIMUM_LIQUIDITY);
+            _mint(msg.sender, _liquidity - MINIMUM_LIQUIDITY);
+            emit Mint(msg.sender, baseAmount, quoteAmount, _liquidity - MINIMUM_LIQUIDITY);
+
+            // Interactions last
+            IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
+            IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
         } else {
-            if (baseBalance == 0 || quoteBalance == 0) {
-                revert InvalidReserves();
-            }
+            if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
+
             uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
-            if (quoteAmount != expectedQuoteAmount) {
+            uint256 lowerBound = (expectedQuoteAmount * (10000 - AMOUNT_TOLERANCE)) / 10000;
+            uint256 upperBound = (expectedQuoteAmount * (10000 + AMOUNT_TOLERANCE)) / 10000;
+
+            if (quoteAmount < lowerBound || quoteAmount > upperBound) {
                 revert AmountRatioMismatch(quoteAmount, expectedQuoteAmount);
             }
-            baseTokenContract.transferFrom(msg.sender, address(this), baseAmount);
-            quoteTokenContract.transferFrom(msg.sender, address(this), quoteAmount);
+
             _liquidity = (totalSupply() * baseAmount) / baseBalance;
             if (_liquidity == 0) revert InsufficientLiquidityMinted();
+
+            // Effects before interactions
             _mint(msg.sender, _liquidity);
             emit Mint(msg.sender, baseAmount, quoteAmount, _liquidity);
+
+            // Interactions last
+            IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
+            IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
         }
         return _liquidity;
     }
@@ -146,7 +172,8 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         uint256 minQuoteAmount,
         uint256 deadline
     ) public lock whenNotPaused returns (uint256, uint256) {
-        if (block.timestamp > deadline) revert DeadlineExpired();
+        requireValidBalances();
+        if (block.number > deadline) revert DeadlineExpired();
         if (amount == 0) revert ZeroAmount();
 
         uint256 _totalSupply = totalSupply();
@@ -155,11 +182,14 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
 
         if (baseAmount < minBaseAmount || quoteAmount < minQuoteAmount) revert SlippageExceeded();
 
+        // Effects before interactions
         _burn(msg.sender, amount);
+        emit Burn(msg.sender, baseAmount, quoteAmount, msg.sender, amount);
+
+        // Interactions last
         IERC20(baseToken).safeTransfer(msg.sender, baseAmount);
         IERC20(quoteToken).safeTransfer(msg.sender, quoteAmount);
 
-        emit Burn(msg.sender, baseAmount, quoteAmount, msg.sender, amount);
         return (baseAmount, quoteAmount);
     }
 
@@ -171,10 +201,9 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         if (inputReserve == 0 || outputReserve == 0) revert InvalidReserves();
         if (inputAmount == 0) revert InvalidTokenAmount(inputAmount);
 
-        // Calculate fee amount
-        uint256 inputAmountWithFee = (inputAmount * (10000 - swapFee)) / 10000;
+        uint256 inputAmountWithFee = inputAmount * (10000 - swapFee);
         uint256 numerator = inputAmountWithFee * outputReserve;
-        uint256 denominator = inputReserve + inputAmountWithFee;
+        uint256 denominator = (inputReserve * 10000) + inputAmountWithFee;
 
         unchecked {
             return numerator / denominator;
@@ -186,7 +215,7 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         uint256 minQuoteAmount,
         uint256 deadline
     ) public lock whenNotPaused {
-        if (block.timestamp > deadline) revert DeadlineExpired();
+        if (block.number > deadline) revert DeadlineExpired();
         if (baseAmount == 0) revert InvalidTokenAmount(baseAmount);
 
         uint256 quoteBought = getAmountOfTokens(
@@ -197,10 +226,12 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
 
         if (quoteBought < minQuoteAmount) revert SlippageExceeded();
 
+        // Effects before interactions
+        emit Swap(msg.sender, baseAmount, 0, 0, quoteBought, msg.sender);
+
+        // Interactions last
         IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
         IERC20(quoteToken).safeTransfer(msg.sender, quoteBought);
-
-        emit Swap(msg.sender, baseAmount, 0, 0, quoteBought, msg.sender);
     }
 
     function swapQuoteToBase(
@@ -208,7 +239,7 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         uint256 minBaseAmount,
         uint256 deadline
     ) public lock whenNotPaused {
-        if (block.timestamp > deadline) revert DeadlineExpired();
+        if (block.number > deadline) revert DeadlineExpired();
         if (quoteAmount == 0) revert InvalidTokenAmount(quoteAmount);
 
         uint256 baseBought = getAmountOfTokens(
@@ -219,17 +250,12 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
 
         if (baseBought < minBaseAmount) revert SlippageExceeded();
 
-        ERC20(quoteToken).transferFrom(msg.sender, address(this), quoteAmount);
-        ERC20(baseToken).transfer(msg.sender, baseBought);
+        // Effects before interactions
+        emit Swap(msg.sender, 0, quoteAmount, baseBought, 0, msg.sender);
 
-        emit Swap(
-            msg.sender,
-            0,
-            quoteAmount,
-            baseBought,
-            0,
-            msg.sender
-        );
+        // Interactions last
+        IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
+        IERC20(baseToken).safeTransfer(msg.sender, baseBought);
     }
 
     function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
@@ -244,5 +270,21 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
             getBaseTokenBalance(),
             getQuoteTokenBalance()
         );
+    }
+
+    function verifyBalances() public view returns (bool) {
+        uint256 baseBalance = IERC20(baseToken).balanceOf(address(this));
+        uint256 quoteBalance = IERC20(quoteToken).balanceOf(address(this));
+
+        // Calculate expected balances based on total supply and initial liquidity
+        uint256 expectedBaseBalance = getBaseTokenBalance();
+        uint256 expectedQuoteBalance = getQuoteTokenBalance();
+
+        return baseBalance == expectedBaseBalance &&
+               quoteBalance == expectedQuoteBalance;
+    }
+
+    function requireValidBalances() internal view {
+        if (!verifyBalances()) revert BalanceMismatch();
     }
 }
