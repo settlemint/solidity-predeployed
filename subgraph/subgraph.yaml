@@ -3,7 +3,7 @@ schema:
   file: schema.graphql
 dataSources:
   - kind: ethereum/contract
-    name: registry
+    name: tokenregistry
     network: settlemint
     source:
       address: "0x5e771e1417100000000000000000000000000001"
@@ -14,17 +14,22 @@ dataSources:
       apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
-        - Registry
-        - Factory
-        - Token
         - Account
-        - TokenBalance
-        - TokenApproval
-        - TokenTransfer
+        - ERC20Contract
+        - ERC20Balance
+        - ERC20Approval
+        - ERC20Transfer
         - Transaction
-        - Block
-        - TokenVolume
-        - TokenVolumeStats
+        - ERC20TokenVolume
+        - ERC20PortfolioSnapshot
+        - ERC20DexPair
+        - ERC20DexMint
+        - ERC20DexBurn
+        - ERC20DexSwap
+        - ERC20DexPairSnapshot
+        - ERC20TokenVolumeStats
+        - ERC20PortfolioStats
+        - ERC20DexPairStats
       abis:
         - name: StarterKitERC20Factory
           file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
@@ -32,10 +37,57 @@ dataSources:
           file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
         - name: StarterKitERC20
           file: ../out/StarterKitERC20.sol/StarterKitERC20.json
+        - name: StarterKitERC20DexFactory
+          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
+        - name: StarterKitERC20Dex
+          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
       eventHandlers:
         - event: TokenAdded(address,string,string,string,address)
           handler: handleTokenAdded
       file: ./src/datasources/erc20-registry.ts
+  - kind: ethereum/contract
+    name: StarterKitERC20DexFactory
+    network: settlemint
+    source:
+      address: "0x5e771e1417100000000000000000000000000003"
+      abi: StarterKitERC20DexFactory
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Account
+        - ERC20Contract
+        - ERC20Balance
+        - ERC20Approval
+        - ERC20Transfer
+        - Transaction
+        - ERC20TokenVolume
+        - ERC20PortfolioSnapshot
+        - ERC20DexPair
+        - ERC20DexMint
+        - ERC20DexBurn
+        - ERC20DexSwap
+        - ERC20DexPairSnapshot
+        - ERC20TokenVolumeStats
+        - ERC20PortfolioStats
+        - ERC20DexPairStats
+      abis:
+        - name: StarterKitERC20Factory
+          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
+        - name: StarterKitERC20Registry
+          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
+        - name: StarterKitERC20
+          file: ../out/StarterKitERC20.sol/StarterKitERC20.json
+        - name: StarterKitERC20DexFactory
+          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
+        - name: StarterKitERC20Dex
+          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
+      eventHandlers:
+        - event: PairCreated(indexed address,indexed address,address,uint256)
+          handler: handlePairCreated
+      file: ./src/datasources/dex-factory.ts
 templates:
   - kind: ethereum/contract
     name: token
@@ -47,26 +99,88 @@ templates:
       apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
-        - Token
-        - Registry
-        - Factory
         - Account
-        - TokenBalance
-        - TokenApproval
-        - TokenTransfer
+        - ERC20Contract
+        - ERC20Balance
+        - ERC20Approval
+        - ERC20Transfer
         - Transaction
-        - Block
-        - TokenVolume
-        - TokenVolumeStats
+        - ERC20TokenVolume
+        - ERC20PortfolioSnapshot
+        - ERC20DexPair
+        - ERC20DexMint
+        - ERC20DexBurn
+        - ERC20DexSwap
+        - ERC20DexPairSnapshot
+        - ERC20TokenVolumeStats
+        - ERC20PortfolioStats
+        - ERC20DexPairStats
       abis:
+        - name: StarterKitERC20Factory
+          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
+        - name: StarterKitERC20Registry
+          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
         - name: StarterKitERC20
           file: ../out/StarterKitERC20.sol/StarterKitERC20.json
+        - name: StarterKitERC20DexFactory
+          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
+        - name: StarterKitERC20Dex
+          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
       eventHandlers:
         - event: Approval(indexed address,indexed address,uint256)
           handler: handleApproval
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleTransfer
       file: ./src/datasources/erc20.ts
+  - kind: ethereum/contract
+    name: StarterKitERC20Dex
+    network: settlemint
+    source:
+      abi: StarterKitERC20Dex
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Account
+        - ERC20Contract
+        - ERC20Balance
+        - ERC20Approval
+        - ERC20Transfer
+        - Transaction
+        - ERC20TokenVolume
+        - ERC20PortfolioSnapshot
+        - ERC20DexPair
+        - ERC20DexMint
+        - ERC20DexBurn
+        - ERC20DexSwap
+        - ERC20DexPairSnapshot
+        - ERC20TokenVolumeStats
+        - ERC20PortfolioStats
+        - ERC20DexPairStats
+      abis:
+        - name: StarterKitERC20Factory
+          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
+        - name: StarterKitERC20Registry
+          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
+        - name: StarterKitERC20
+          file: ../out/StarterKitERC20.sol/StarterKitERC20.json
+        - name: StarterKitERC20DexFactory
+          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
+        - name: StarterKitERC20Dex
+          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
+      eventHandlers:
+        - event: Mint(indexed address,uint256,uint256,uint256)
+          handler: handleMint
+        - event: Burn(indexed address,uint256,uint256,indexed address,uint256)
+          handler: handleBurn
+        - event: Swap(indexed address,uint256,uint256,uint256,uint256,indexed address)
+          handler: handleSwap
+        - event: FeeUpdated(uint256,uint256)
+          handler: handleFeeUpdated
+        - event: EmergencyWithdraw(address,uint256)
+          handler: handleEmergencyWithdraw
+      file: ./src/datasources/dex-pair.ts
 features:
   - nonFatalErrors
   - fullTextSearch

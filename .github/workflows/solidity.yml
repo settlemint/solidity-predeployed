@@ -375,7 +375,7 @@ jobs:
         with:
           commit_message: "chore: update package versions [skip ci]"
           branch: main
-          file_pattern: 'package.json README.md'
+          file_pattern: 'package.json README.md all_allocations.json'
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

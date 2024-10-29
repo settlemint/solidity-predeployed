@@ -4,7 +4,7 @@ import {
   events,
   transactions,
 } from '@amxx/graphprotocol-utils';
-import { ERC20Transfer, TokenVolume } from '../../generated/schema';
+import { ERC20TokenVolume, ERC20Transfer } from '../../generated/schema';
 import {
   Approval as ApprovalEvent,
   Transfer as TransferEvent,
@@ -21,9 +21,13 @@ import {
 export function handleTransfer(event: TransferEvent): void {
   let contract = fetchERC20(event.address)
   let ev = new ERC20Transfer(events.id(event))
-  ev.emitter = contract.id
+
+  // Set Event interface fields
+  ev.emitter = contract.asAccount
   ev.transaction = transactions.log(event).id
   ev.timestamp = event.block.timestamp
+
+  // Set ERC20Transfer specific fields
   ev.contract = contract.id
   ev.value = decimals.toDecimals(event.params.value, contract.decimals)
   ev.valueExact = event.params.value
@@ -50,9 +54,9 @@ export function handleTransfer(event: TransferEvent): void {
 
   ev.save()
 
-  let volume = new TokenVolume("auto")
+  // Update volume tracking with proper Int8 ID and Timestamp
+  let volume = new ERC20TokenVolume("auto")
   volume.token = contract.id
-  volume.timestamp = event.block.timestamp.toI32()
   volume.volume = event.params.value
   volume.transferCount = 1
   volume.save()

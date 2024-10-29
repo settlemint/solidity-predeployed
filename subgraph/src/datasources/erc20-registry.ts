@@ -1,7 +1,7 @@
+import { token } from '../../generated/templates';
 import {
   TokenAdded as TokenAddedEvent,
-} from '../../generated/registry/StarterKitERC20Registry';
-import { token } from '../../generated/templates';
+} from '../../generated/tokenregistry/StarterKitERC20Registry';
 import {
   fetchERC20
 } from '../fetch/erc20';
