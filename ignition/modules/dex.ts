@@ -52,16 +52,6 @@ export const DexModule = buildModule("DexModule", (m) => {
     after: [approveSwap]
   });
 
-  // Remove liquidity (only after swap is complete)
-  // m.call(pair, "removeLiquidity", [
-  //   100000000000000000000n,
-  //   90000000000000000000n,
-  //   90000000000000000000n,
-  //   deadline
-  // ], {
-  //   id: "removeLiquidity",
-  //   after: [executeSwap]
-  // });
 
   return { pair };
 });

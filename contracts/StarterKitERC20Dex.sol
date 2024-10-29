@@ -299,11 +299,17 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 baseBalance = IERC20(baseToken).balanceOf(address(this));
         uint256 quoteBalance = IERC20(quoteToken).balanceOf(address(this));
 
-        return baseBalance == _trackedBaseBalance &&
-               quoteBalance == _trackedQuoteBalance;
+        return (
+            _abs(baseBalance, _trackedBaseBalance) <= AMOUNT_TOLERANCE &&
+            _abs(quoteBalance, _trackedQuoteBalance) <= AMOUNT_TOLERANCE
+        );
     }
 
     function requireValidBalances() internal view {
         if (!verifyBalances()) revert BalanceMismatch();
+    }
+
+    function _abs(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a >= b ? a - b : b - a;
     }
 }
