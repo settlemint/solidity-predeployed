@@ -19,17 +19,12 @@ contract StarterKitERC20DexFactoryTest is Test {
     owner = address(this);
     user1 = makeAddr("user1");
 
-    factory = new StarterKitERC20DexFactory(INITIAL_FEE);
+    factory = new StarterKitERC20DexFactory();
     token1 = new StarterKitERC20("Token 1", "TK1", owner);
     token2 = new StarterKitERC20("Token 2", "TK2", owner);
 
     token1.mint(owner, INITIAL_SUPPLY);
     token2.mint(owner, INITIAL_SUPPLY);
-  }
-
-  function test_Constructor() public {
-    assertEq(factory.initialFee(), INITIAL_FEE);
-    assertEq(factory.owner(), owner);
   }
 
   function test_CreatePair() public {
@@ -61,15 +56,4 @@ contract StarterKitERC20DexFactoryTest is Test {
     factory.createPair(address(token1), address(token2));
   }
 
-  function test_SetInitialFee() public {
-    uint256 newFee = 50;
-    factory.setInitialFee(newFee);
-    assertEq(factory.initialFee(), newFee);
-  }
-
-  function test_RevertIf_NonOwnerSetFee() public {
-    vm.prank(user1);
-    vm.expectRevert();
-    factory.setInitialFee(50);
-  }
 }
