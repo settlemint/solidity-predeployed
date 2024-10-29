@@ -46,7 +46,8 @@ contract StarterKitERC20DexFactory is Ownable {
         StarterKitERC20Dex newPair = new StarterKitERC20Dex{salt: salt}(
             token0,
             token1,
-            initialFee
+            initialFee,
+            msg.sender
         );
 
         pair = address(newPair);

@@ -2,14 +2,21 @@
 pragma solidity ^0.8.24;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
+contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant FEE_SETTER_ROLE = keccak256("FEE_SETTER_ROLE");
 
     error SameTokenAddress(address token);
     error InvalidReserves();
@@ -19,7 +26,6 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
     error InvalidTokenAmount(uint256 amount);
     error InvalidFee(uint256 fee);
     error FeeTooHigh(uint256 fee);
-    error ContractLocked();
     error DeadlineExpired();
     error SlippageExceeded();
     error ZeroAddress();
@@ -27,101 +33,105 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
     error TokenDecimalsMismatch();
     error MaxTokenAmountExceeded();
     error BalanceMismatch();
+    error SwapAmountTooLarge(uint256 amount, uint256 maxAmount);
+    error UnauthorizedTimelock();
 
-    event Mint(
-        address indexed sender,
-        uint256 baseAmount,
-        uint256 quoteAmount,
-        uint256 liquidity
-    );
-    event Burn(
-        address indexed sender,
-        uint256 baseAmount,
-        uint256 quoteAmount,
-        address indexed to,
-        uint256 liquidity
-    );
-    event Swap(
-        address indexed sender,
-        uint256 baseAmountIn,
-        uint256 quoteAmountIn,
-        uint256 baseAmountOut,
-        uint256 quoteAmountOut,
-        address indexed to
-    );
+    event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount, uint256 liquidity);
+    event Burn(address indexed sender, uint256 baseAmount, uint256 quoteAmount, address indexed to, uint256 liquidity);
+    event Swap(address indexed sender, uint256 baseAmountIn, uint256 quoteAmountIn, uint256 baseAmountOut, uint256 quoteAmountOut, address indexed to);
     event FeeUpdated(uint256 oldFee, uint256 newFee);
     event EmergencyWithdraw(address token, uint256 amount);
 
     address public immutable baseToken;
     address public immutable quoteToken;
+    TimelockController public immutable timelock;
 
-    // Fee in basis points (1% = 100)
     uint256 public swapFee;
-    uint256 public constant MAX_FEE = 1000; // (10%)
-
+    uint256 public constant MAX_FEE = 1000;
     uint256 private constant MINIMUM_LIQUIDITY = 1000;
-    uint256 private constant AMOUNT_TOLERANCE = 100; // 0.01% tolerance for amount comparisons
-    bool private unlocked = true;
-
+    uint256 private constant AMOUNT_TOLERANCE = 100;
     uint256 public constant MAX_TOKEN_AMOUNT = type(uint128).max;
 
-    modifier lock() {
-        if (!unlocked) revert ContractLocked();
-        unlocked = false;
-        _;
-        unlocked = true;
-    }
+    uint256 private _trackedBaseBalance;
+    uint256 private _trackedQuoteBalance;
 
     constructor(
         address _baseToken,
         address _quoteToken,
-        uint256 _initialFee
-    ) ERC20(name(), symbol()) Ownable(msg.sender) {
+        uint256 _initialFee,
+        address _admin
+    ) ERC20(
+        string.concat(
+            IERC20Metadata(_baseToken).symbol(),
+            "/",
+            IERC20Metadata(_quoteToken).symbol(),
+            " LP"
+        ),
+        string.concat(
+            IERC20Metadata(_baseToken).symbol(),
+            "-",
+            IERC20Metadata(_quoteToken).symbol(),
+            "-LP"
+        )
+    ) ERC20Permit(
+        string.concat(
+            IERC20Metadata(_baseToken).symbol(),
+            "/",
+            IERC20Metadata(_quoteToken).symbol(),
+            " LP"
+        )
+    ) {
         if (_baseToken == address(0) || _quoteToken == address(0)) revert ZeroAddress();
         if (_baseToken == _quoteToken) revert SameTokenAddress(_baseToken);
         if (_initialFee > MAX_FEE) revert FeeTooHigh(_initialFee);
         if (_initialFee == 0) revert InvalidFee(_initialFee);
 
-        // Verify both tokens are valid ERC20
         try IERC20(_baseToken).totalSupply() {} catch { revert InvalidERC20(); }
         try IERC20(_quoteToken).totalSupply() {} catch { revert InvalidERC20(); }
 
-        // Verify token decimals are compatible
-        uint8 baseDecimals = ERC20(_baseToken).decimals();
-        uint8 quoteDecimals = ERC20(_quoteToken).decimals();
+        uint8 baseDecimals = ERC20Permit(_baseToken).decimals();
+        uint8 quoteDecimals = ERC20Permit(_quoteToken).decimals();
         if (baseDecimals != quoteDecimals) revert TokenDecimalsMismatch();
 
         baseToken = _baseToken;
         quoteToken = _quoteToken;
         swapFee = _initialFee;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(ADMIN_ROLE, _admin);
+        _grantRole(FEE_SETTER_ROLE, _admin);
+
+        address[] memory proposers = new address[](1);
+        address[] memory executors = new address[](1);
+        proposers[0] = _admin;
+        executors[0] = _admin;
+        timelock = new TimelockController(2 days, proposers, executors, _admin);
     }
 
-    function pause() external onlyOwner {
+    function pause() external onlyRole(ADMIN_ROLE) {
         _pause();
     }
 
-    function unpause() external onlyOwner {
+    function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
     }
 
-    function setFee(uint256 _newFee) external onlyOwner {
-        if (_newFee == 0) {
-            revert InvalidFee(_newFee);
-        }
-
+    function setFee(uint256 _newFee) external {
+        if (msg.sender != address(timelock)) revert UnauthorizedTimelock();
+        if (_newFee == 0) revert InvalidFee(_newFee);
         emit FeeUpdated(swapFee, _newFee);
         swapFee = _newFee;
     }
 
     function getBaseTokenBalance() public view returns (uint256) {
-        return ERC20(baseToken).balanceOf(address(this));
+        return _trackedBaseBalance;
     }
 
     function getQuoteTokenBalance() public view returns (uint256) {
-        return ERC20(quoteToken).balanceOf(address(this));
+        return _trackedQuoteBalance;
     }
 
-    function addLiquidity(uint256 baseAmount, uint256 quoteAmount) public lock returns (uint256) {
+    function addLiquidity(uint256 baseAmount, uint256 quoteAmount) public nonReentrant returns (uint256) {
         if (baseAmount > MAX_TOKEN_AMOUNT || quoteAmount > MAX_TOKEN_AMOUNT)
             revert MaxTokenAmountExceeded();
 
@@ -163,6 +173,8 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
             IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
             IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
         }
+        _trackedBaseBalance += baseAmount;
+        _trackedQuoteBalance += quoteAmount;
         return _liquidity;
     }
 
@@ -171,7 +183,7 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         uint256 minBaseAmount,
         uint256 minQuoteAmount,
         uint256 deadline
-    ) public lock whenNotPaused returns (uint256, uint256) {
+    ) public nonReentrant whenNotPaused returns (uint256, uint256) {
         requireValidBalances();
         if (block.number > deadline) revert DeadlineExpired();
         if (amount == 0) revert ZeroAmount();
@@ -189,6 +201,9 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         // Interactions last
         IERC20(baseToken).safeTransfer(msg.sender, baseAmount);
         IERC20(quoteToken).safeTransfer(msg.sender, quoteAmount);
+
+        _trackedBaseBalance -= baseAmount;
+        _trackedQuoteBalance -= quoteAmount;
 
         return (baseAmount, quoteAmount);
     }
@@ -214,7 +229,12 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         uint256 baseAmount,
         uint256 minQuoteAmount,
         uint256 deadline
-    ) public lock whenNotPaused {
+    ) public nonReentrant whenNotPaused {
+        uint256 initialBalance = getBaseTokenBalance();
+        uint256 maxSwapAmount = (initialBalance * 3) / 100;
+        if (baseAmount > maxSwapAmount) {
+            revert SwapAmountTooLarge(baseAmount, maxSwapAmount);
+        }
         if (block.number > deadline) revert DeadlineExpired();
         if (baseAmount == 0) revert InvalidTokenAmount(baseAmount);
 
@@ -238,7 +258,7 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         uint256 quoteAmount,
         uint256 minBaseAmount,
         uint256 deadline
-    ) public lock whenNotPaused {
+    ) public nonReentrant whenNotPaused {
         if (block.number > deadline) revert DeadlineExpired();
         if (quoteAmount == 0) revert InvalidTokenAmount(quoteAmount);
 
@@ -258,7 +278,10 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         IERC20(baseToken).safeTransfer(msg.sender, baseBought);
     }
 
-    function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
+    function emergencyWithdraw(
+        address token,
+        uint256 amount
+    ) external nonReentrant onlyRole(ADMIN_ROLE) {
         IERC20(token).safeTransfer(msg.sender, amount);
         emit EmergencyWithdraw(token, amount);
     }
@@ -276,12 +299,8 @@ contract StarterKitERC20Dex is ERC20, Ownable, Pausable {
         uint256 baseBalance = IERC20(baseToken).balanceOf(address(this));
         uint256 quoteBalance = IERC20(quoteToken).balanceOf(address(this));
 
-        // Calculate expected balances based on total supply and initial liquidity
-        uint256 expectedBaseBalance = getBaseTokenBalance();
-        uint256 expectedQuoteBalance = getQuoteTokenBalance();
-
-        return baseBalance == expectedBaseBalance &&
-               quoteBalance == expectedQuoteBalance;
+        return baseBalance == _trackedBaseBalance &&
+               quoteBalance == _trackedQuoteBalance;
     }
 
     function requireValidBalances() internal view {
