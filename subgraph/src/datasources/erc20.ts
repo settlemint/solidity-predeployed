@@ -57,6 +57,7 @@ export function handleTransfer(event: TransferEvent): void {
   // Update volume tracking with proper Int8 ID and Timestamp
   let volume = new ERC20TokenVolume("auto")
   volume.token = contract.id
+  volume.timestamp = event.block.timestamp.toI32()
   volume.volume = event.params.value
   volume.transferCount = 1
   volume.save()
