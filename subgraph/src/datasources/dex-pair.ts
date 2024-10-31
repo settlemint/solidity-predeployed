@@ -16,7 +16,7 @@ import {
   Swap as SwapEvent
 } from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex';
 import { fetchAccount } from '../fetch/account';
-import { fetchDex } from '../fetch/dex';
+import { fetchDex, fetchERC20DexStake } from '../fetch/dex';
 import { fetchERC20 } from '../fetch/erc20';
 
 export function handleMint(event: MintEvent): void {
@@ -40,6 +40,12 @@ export function handleMint(event: MintEvent): void {
   mint.liquidity = decimals.toDecimals(mint.liquidityExact, baseContract.decimals)
 
   mint.save()
+
+  let from = fetchAccount(event.params.sender)
+  let stake = fetchERC20DexStake(pair, from)
+  stake.valueExact = stake.valueExact.plus(mint.liquidityExact)
+  stake.value = decimals.toDecimals(stake.valueExact, baseContract.decimals)
+  stake.save()
 
   let snapshot = new ERC20DexPairSnapshot("auto")
   snapshot.pair = pair.id
@@ -84,6 +90,12 @@ export function handleBurn(event: BurnEvent): void {
   burn.liquidity = decimals.toDecimals(burn.liquidityExact, baseContract.decimals)
 
   burn.save()
+
+  let from = fetchAccount(event.params.sender)
+  let stake = fetchERC20DexStake(pair, from)
+  stake.valueExact = stake.valueExact.minus(burn.liquidityExact)
+  stake.value = decimals.toDecimals(stake.valueExact, baseContract.decimals)
+  stake.save()
 
   let snapshot = new ERC20DexPairSnapshot("auto")
   snapshot.pair = pair.id

@@ -2,9 +2,7 @@ import { constants } from '@amxx/graphprotocol-utils';
 import {
   Address
 } from '@graphprotocol/graph-ts';
-import {
-  ERC20DexPair,
-} from '../../generated/schema';
+import { Account, ERC20DexPair, ERC20DexStake } from '../../generated/schema';
 import { StarterKitERC20Dex } from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex';
 
 export function fetchDex(address: Address): ERC20DexPair {
@@ -65,4 +63,21 @@ export function fetchDex(address: Address): ERC20DexPair {
   pair.save()
 
   return pair as ERC20DexPair
+}
+
+
+export function fetchERC20DexStake(contract: ERC20DexPair, account: Account): ERC20DexStake {
+  let id = contract.id.toHex().concat('/').concat(account.id.toHex())
+  let balance = ERC20DexStake.load(id)
+
+  if (balance == null) {
+    balance = new ERC20DexStake(id)
+    balance.pair = contract.id
+    balance.account = account.id
+    balance.value = constants.BIGDECIMAL_ZERO
+    balance.valueExact = constants.BIGINT_ZERO
+    balance.save()
+  }
+
+  return balance as ERC20DexStake
 }

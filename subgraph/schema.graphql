@@ -304,6 +304,26 @@ type ERC20DexPair @entity {
 
   "All liquidity burn events for this pair"
   burns: [ERC20DexBurn!]! @derivedFrom(field: "pair")
+
+  "All stakes for this pair"
+  stakes: [ERC20DexStake!]! @derivedFrom(field: "pair")
+}
+
+type ERC20DexStake @entity {
+  "Composite identifier combining token contract and holder account addresses"
+  id: ID!
+
+  "The ERC20 token contract this balance is for"
+  pair: ERC20DexPair!
+
+  "The account holding this token balance"
+  account: Account
+
+  "Current balance in decimal format for human readability"
+  value: BigDecimal!
+
+  "Current balance as raw integer value (full precision)"
+  valueExact: BigInt!
 }
 
 """
