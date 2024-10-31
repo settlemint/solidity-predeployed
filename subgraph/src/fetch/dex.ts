@@ -58,8 +58,8 @@ export function fetchDex(address: Address): ERC20DexPair {
     pair.quoteTokenPrice = baseReserve.value.toBigDecimal()
       .div(quoteReserve.value.toBigDecimal())
   } else {
-    pair.baseTokenPrice = constants.BIGDECIMAL_ZERO
-    pair.quoteTokenPrice = constants.BIGDECIMAL_ZERO
+    pair.baseTokenPrice = constants.BIGDECIMAL_ONE
+    pair.quoteTokenPrice = constants.BIGDECIMAL_ONE
   }
 
   pair.save()

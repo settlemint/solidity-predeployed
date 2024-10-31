@@ -44,10 +44,10 @@ type ERC20Contract @entity {
   asAccount: Account!
 
   "Official name of the token (e.g. 'Ethereum')"
-  name: String
+  name: String!
 
   "Trading symbol/ticker of the token (e.g. 'ETH')"
-  symbol: String
+  symbol: String!
 
   "Number of decimal places for token amount representation (e.g. 18 for ETH)"
   decimals: Int!

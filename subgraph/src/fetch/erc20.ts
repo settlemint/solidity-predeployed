@@ -27,8 +27,8 @@ export function fetchERC20(address: Address): ERC20Contract {
 
     // Common
     contract = new ERC20Contract(address)
-    contract.name = name.reverted ? null : name.value
-    contract.symbol = symbol.reverted ? null : symbol.value
+    contract.name = name.reverted ? "" : name.value
+    contract.symbol = symbol.reverted ? "" : symbol.value
     contract.decimals = decimals.reverted ? 18 : decimals.value
     contract.totalSupply = constants.BIGDECIMAL_ZERO
     contract.totalSupplyExact = constants.BIGINT_ZERO
