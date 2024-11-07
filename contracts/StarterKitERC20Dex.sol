@@ -230,6 +230,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 minQuoteAmount,
         uint256 deadline
     ) public nonReentrant whenNotPaused {
+        requireValidBalances();
         uint256 initialBalance = getBaseTokenBalance();
         uint256 maxSwapAmount = (initialBalance * 3) / 100;
         if (baseAmount > maxSwapAmount) {
@@ -251,7 +252,9 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
         // Interactions last
         IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
+        _trackedBaseBalance += baseAmount;
         IERC20(quoteToken).safeTransfer(msg.sender, quoteBought);
+        _trackedQuoteBalance -= quoteBought;
     }
 
     function swapQuoteToBase(
@@ -259,6 +262,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 minBaseAmount,
         uint256 deadline
     ) public nonReentrant whenNotPaused {
+        requireValidBalances();
         if (block.number > deadline) revert DeadlineExpired();
         if (quoteAmount == 0) revert InvalidTokenAmount(quoteAmount);
 
@@ -275,7 +279,9 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
         // Interactions last
         IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
+        _trackedQuoteBalance += quoteAmount;
         IERC20(baseToken).safeTransfer(msg.sender, baseBought);
+        _trackedBaseBalance -= baseBought;
     }
 
     function emergencyWithdraw(
@@ -292,6 +298,14 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
             baseAmount,
             getBaseTokenBalance(),
             getQuoteTokenBalance()
+        );
+    }
+
+    function getQuoteToBasePrice(uint256 quoteAmount) external view returns (uint256) {
+        return getAmountOfTokens(
+            quoteAmount,
+            getQuoteTokenBalance(),
+            getBaseTokenBalance()
         );
     }
 

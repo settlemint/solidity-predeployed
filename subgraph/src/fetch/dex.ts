@@ -33,16 +33,11 @@ export function fetchDex(address: Address): ERC20DexPair {
   pair.totalSupplyExact = totalSupply
   pair.totalSupply = totalSupply.toBigDecimal()
 
-  // Calculate prices based on reserves
-  if (quoteReserve.gt(constants.BIGINT_ZERO) && baseReserve.gt(constants.BIGINT_ZERO)) {
-    pair.baseTokenPrice = quoteReserve.toBigDecimal()
-      .div(baseReserve.toBigDecimal())
-    pair.quoteTokenPrice = baseReserve.toBigDecimal()
-      .div(quoteReserve.toBigDecimal())
-  } else {
-    pair.baseTokenPrice = constants.BIGDECIMAL_ZERO
-    pair.quoteTokenPrice = constants.BIGDECIMAL_ZERO
-  }
+  // Get prices directly from contract functions
+  pair.baseTokenPriceExact = endpoint.getQuoteToBasePrice(constants.BIGINT_ONE)
+  pair.baseTokenPrice = pair.baseTokenPriceExact.toBigDecimal()
+  pair.quoteTokenPriceExact = endpoint.getBaseToQuotePrice(constants.BIGINT_ONE)
+  pair.quoteTokenPrice = pair.quoteTokenPriceExact.toBigDecimal()
 
   pair.save()
   return pair as ERC20DexPair

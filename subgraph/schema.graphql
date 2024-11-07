@@ -289,9 +289,11 @@ type ERC20DexPair @entity {
 
   "Current price of base token in quote token units (decimal)"
   baseTokenPrice: BigDecimal!
+  baseTokenPriceExact: BigInt!
 
   "Current price of quote token in base token units (decimal)"
   quoteTokenPrice: BigDecimal!
+  quoteTokenPriceExact: BigInt!
 
   "Current swap fee in basis points"
   swapFee: BigInt!

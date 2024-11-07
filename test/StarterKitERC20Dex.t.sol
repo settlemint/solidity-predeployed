@@ -67,6 +67,8 @@ contract StarterKitERC20DexTest is Test {
         dex.addLiquidity(1000e18, 1000e18);
 
         assertTrue(dex.verifyBalances());
+        assertEq(dex.getBaseTokenBalance(), 1000e18);
+        assertEq(dex.getQuoteTokenBalance(), 1000e18);
     }
 
     function testSwapBaseToQuoteMaxAmount() public {
@@ -100,8 +102,18 @@ contract StarterKitERC20DexTest is Test {
         quoteToken.approve(address(dex), 1000e18);
         dex.addLiquidity(1000e18, 1000e18);
 
+        // Verify initial balances
+        assertEq(dex.getBaseTokenBalance(), 1000e18);
+        assertEq(dex.getQuoteTokenBalance(), 1000e18);
+        assertEq(baseToken.balanceOf(address(dex)), 1000e18);
+
         // Try to manipulate balance by direct mint
         baseToken.mint(address(dex), 100e18);
+
+        // getBaseTokenBalance should still return the tracked amount
+        assertEq(dex.getBaseTokenBalance(), 1000e18);
+        // But actual token balance should be higher
+        assertEq(baseToken.balanceOf(address(dex)), 1100e18);
 
         // Verify that balances are detected as invalid
         assertFalse(dex.verifyBalances());
@@ -117,6 +129,9 @@ contract StarterKitERC20DexTest is Test {
         quoteToken.approve(address(dex), 1000e18);
         dex.addLiquidity(1000e18, 1000e18);
 
+        assertEq(dex.getBaseTokenBalance(), 1000e18);
+        assertEq(dex.getQuoteTokenBalance(), 1000e18);
+
         // Perform swap
         uint256 swapAmount = 2e19;
         baseToken.approve(address(dex), swapAmount);
@@ -127,6 +142,8 @@ contract StarterKitERC20DexTest is Test {
         uint256 balanceAfter = quoteToken.balanceOf(address(this));
 
         assertTrue(balanceAfter > balanceBefore);
+        assertEq(dex.getBaseTokenBalance(), 1000e18 + swapAmount);
+        assertTrue(dex.getQuoteTokenBalance() < 1000e18); // Quote balance should decrease after swap
     }
 
     // Existing tests remain unchanged...
