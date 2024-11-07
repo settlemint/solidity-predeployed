@@ -1,7 +1,6 @@
 import { constants } from '@amxx/graphprotocol-utils';
 import {
-  Address,
-  BigDecimal
+  Address
 } from '@graphprotocol/graph-ts';
 import { Account, ERC20DexPair, ERC20DexStake } from '../../generated/schema';
 import { StarterKitERC20Dex } from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex';
@@ -36,14 +35,10 @@ export function fetchDex(address: Address): ERC20DexPair {
 
   // Calculate prices based on reserves
   if (quoteReserve.gt(constants.BIGINT_ZERO) && baseReserve.gt(constants.BIGINT_ZERO)) {
-    // Need to adjust for decimals of both tokens
-    let baseDecimals = BigDecimal.fromString('1' + '0'.repeat(endpoint.decimals()))
-    let quoteDecimals = BigDecimal.fromString('1' + '0'.repeat(endpoint.decimals()))
-
-    pair.baseTokenPrice = quoteReserve.toBigDecimal().div(quoteDecimals)
-      .div(baseReserve.toBigDecimal().div(baseDecimals))
-    pair.quoteTokenPrice = baseReserve.toBigDecimal().div(baseDecimals)
-      .div(quoteReserve.toBigDecimal().div(quoteDecimals))
+    pair.baseTokenPrice = quoteReserve.toBigDecimal()
+      .div(baseReserve.toBigDecimal())
+    pair.quoteTokenPrice = baseReserve.toBigDecimal()
+      .div(quoteReserve.toBigDecimal())
   } else {
     pair.baseTokenPrice = constants.BIGDECIMAL_ZERO
     pair.quoteTokenPrice = constants.BIGDECIMAL_ZERO

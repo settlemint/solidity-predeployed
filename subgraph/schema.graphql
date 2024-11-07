@@ -462,7 +462,7 @@ type ERC20DexSwap implements Event @entity(immutable: true){
 Records an emergency withdrawal event from a DEX pair.
 Tracks the token and amount withdrawn in an emergency situation.
 """
-type EmergencyWithdraw implements Event @entity(immutable: true) {
+type ERC20DexEmergencyWithdraw implements Event @entity(immutable: true) {
   "Unique event identifier"
   id: ID!
 
@@ -489,7 +489,7 @@ type EmergencyWithdraw implements Event @entity(immutable: true) {
 Records a fee update event on a DEX pair.
 Tracks changes to the swap fee percentage.
 """
-type FeeUpdate implements Event @entity(immutable: true) {
+type ERC20DexFeeUpdate implements Event @entity(immutable: true) {
   "Unique event identifier"
   id: ID!
 

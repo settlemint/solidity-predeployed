@@ -2,11 +2,11 @@ import { constants, decimals, transactions } from '@amxx/graphprotocol-utils';
 import { Address } from '@graphprotocol/graph-ts';
 import {
   ERC20DexBurn,
+  ERC20DexEmergencyWithdraw,
+  ERC20DexFeeUpdate,
   ERC20DexMint,
   ERC20DexPairSnapshot,
-  ERC20DexSwap,
-  EmergencyWithdraw,
-  FeeUpdate
+  ERC20DexSwap
 } from '../../generated/schema';
 import {
   Burn as BurnEvent,
@@ -169,7 +169,7 @@ export function handleEmergencyWithdraw(event: EmergencyWithdrawEvent): void {
   let pair = fetchDex(event.address)
   let token = fetchERC20(event.params.token)
 
-  let withdraw = new EmergencyWithdraw(
+  let withdraw = new ERC20DexEmergencyWithdraw(
     event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
   )
 
@@ -187,7 +187,7 @@ export function handleEmergencyWithdraw(event: EmergencyWithdrawEvent): void {
 export function handleFeeUpdated(event: FeeUpdatedEvent): void {
   let pair = fetchDex(event.address)
 
-  let feeUpdate = new FeeUpdate(
+  let feeUpdate = new ERC20DexFeeUpdate(
     event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
   )
 
