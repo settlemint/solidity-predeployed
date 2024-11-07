@@ -54,5 +54,8 @@
     "deploy:contracts": "BTP_RPC_URL=http://localhost:8545 npx hardhat ignition deploy --reset --network btp ./ignition/modules/main.ts",
     "deploy:subgraph": "cd subgraph && ./graph-local-deploy.sh",
     "stop": "docker compose down"
-  }
+  },
+  "trustedDependencies": [
+    "protobufjs"
+  ]
 }
