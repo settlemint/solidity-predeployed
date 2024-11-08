@@ -105,13 +105,13 @@ contract TokenTest is Test {
         Token testToken = new Token("Test Token 2", "TEST2", admin);
         vm.startPrank(admin);
         testToken.mint(address(token), 1000);
-
+        
         // Grant ADMIN_ROLE to admin for emergencyWithdraw
         token.grantRole(token.ADMIN_ROLE(), admin);
-
+        
         vm.expectEmit(true, true, true, true);
         emit EmergencyWithdraw(address(testToken), 1000);
-
+        
         token.emergencyWithdraw(address(testToken), 1000);
         assertEq(testToken.balanceOf(admin), 1000);
         vm.stopPrank();
