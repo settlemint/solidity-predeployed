@@ -294,18 +294,30 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
     // Add view function for price calculation
     function getBaseToQuotePrice(uint256 baseAmount) external view returns (uint256) {
+        uint256 baseBalance = getBaseTokenBalance();
+        uint256 quoteBalance = getQuoteTokenBalance();
+
+        if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
+        if (baseAmount == 0) revert InvalidTokenAmount(0);
+
         return getAmountOfTokens(
             baseAmount,
-            getBaseTokenBalance(),
-            getQuoteTokenBalance()
+            baseBalance,
+            quoteBalance
         );
     }
 
     function getQuoteToBasePrice(uint256 quoteAmount) external view returns (uint256) {
+        uint256 baseBalance = getBaseTokenBalance();
+        uint256 quoteBalance = getQuoteTokenBalance();
+
+        if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
+        if (quoteAmount == 0) revert InvalidTokenAmount(0);
+
         return getAmountOfTokens(
             quoteAmount,
-            getQuoteTokenBalance(),
-            getBaseTokenBalance()
+            quoteBalance,
+            baseBalance
         );
     }
 
