@@ -23,7 +23,7 @@ contract DexFactoryTest is Test {
     function setUp() public {
         admin = makeAddr("admin");
         user1 = makeAddr("user1");
-        
+
         factory = new DexFactory();
         token0 = new Token("Token0", "TK0", admin);
         token1 = new Token("Token1", "TK1", admin);
@@ -43,9 +43,9 @@ contract DexFactoryTest is Test {
             address(factory)
         );
         emit PairCreated(address(token0), address(token1), expectedAddress, 1);
-        
+
         address pair = factory.createPair(address(token0), address(token1));
-        
+
         assertNotEq(pair, address(0));
         assertEq(factory.getPair(address(token0), address(token1)), pair);
         assertEq(factory.getPair(address(token1), address(token0)), pair);
@@ -68,15 +68,15 @@ contract DexFactoryTest is Test {
 
     function test_CreateMultiplePairs() public {
         Token token2 = new Token("Token2", "TK2", admin);
-        
+
         address pair1 = factory.createPair(address(token0), address(token1));
         address pair2 = factory.createPair(address(token0), address(token2));
         address pair3 = factory.createPair(address(token1), address(token2));
-        
+
         assertNotEq(pair1, pair2);
         assertNotEq(pair2, pair3);
         assertNotEq(pair1, pair3);
-        
+
         assertEq(factory.allPairsLength(), 3);
     }
 
@@ -85,15 +85,15 @@ contract DexFactoryTest is Test {
         address pair1 = factory.createPair(address(token0), address(token1));
         Token token2 = new Token("Token2", "TK2", admin);
         address pair2 = factory.createPair(address(token2), address(token0));
-        
+
         // Verify pairs are created with ordered tokens
         Pair pairContract1 = Pair(pair1);
         Pair pairContract2 = Pair(pair2);
-        
+
         assertTrue(address(token0) < address(token1));
         assertEq(pairContract1.baseToken(), address(token0));
         assertEq(pairContract1.quoteToken(), address(token1));
-        
+
         // For pair2, verify tokens are ordered regardless of input order
         assertTrue(
             (pairContract2.baseToken() < pairContract2.quoteToken()) ||
@@ -104,10 +104,10 @@ contract DexFactoryTest is Test {
 
     function test_AllPairsLength() public {
         assertEq(factory.allPairsLength(), 0);
-        
+
         factory.createPair(address(token0), address(token1));
         assertEq(factory.allPairsLength(), 1);
-        
+
         Token token2 = new Token("Token2", "TK2", admin);
         factory.createPair(address(token0), address(token2));
         assertEq(factory.allPairsLength(), 2);

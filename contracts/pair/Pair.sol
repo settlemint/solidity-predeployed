@@ -396,6 +396,14 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
         if(token == address(0)) revert ZeroAddress();
         if(amount == 0) revert InvalidAmount();
         if(amount > IERC20(token).balanceOf(address(this))) revert InsufficientBalance();
+        
+        // Update tracked balances
+        if(token == baseToken) {
+            _trackedBaseBalance -= uint128(amount);
+        } else if(token == quoteToken) {
+            _trackedQuoteBalance -= uint128(amount);
+        }
+        
         IERC20(token).safeTransfer(msg.sender, amount);
         emit EmergencyWithdraw(token, amount);
     }

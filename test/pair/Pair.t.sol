@@ -180,13 +180,48 @@ contract PairTest is Test {
 
     function test_EmergencyWithdraw() public {
         vm.startPrank(admin);
+        
+        // First add liquidity to properly track balances
         baseToken.mint(address(pair), 100e18);
-
+        quoteToken.mint(address(pair), 100e18);
+        
+        // Update tracked balances by adding liquidity
+        vm.stopPrank();
+        vm.startPrank(user1);
+        baseToken.approve(address(pair), 100e18);
+        quoteToken.approve(address(pair), 100e18);
+        pair.addLiquidity(100e18, 100e18);
+        vm.stopPrank();
+        
+        vm.startPrank(admin);
         vm.expectEmit(true, true, true, true);
         emit EmergencyWithdraw(address(baseToken), 100e18);
-
         pair.emergencyWithdraw(address(baseToken), 100e18);
         assertEq(baseToken.balanceOf(admin), 100e18);
+        vm.stopPrank();
+    }
+
+    function testFail_EmergencyWithdrawUnauthorized() public {
+        vm.startPrank(user1);
+        pair.emergencyWithdraw(address(baseToken), 100e18);
+        vm.stopPrank();
+    }
+
+    function testFail_EmergencyWithdrawZeroAddress() public {
+        vm.startPrank(admin);
+        pair.emergencyWithdraw(address(0), 100e18);
+        vm.stopPrank();
+    }
+
+    function testFail_EmergencyWithdrawZeroAmount() public {
+        vm.startPrank(admin);
+        pair.emergencyWithdraw(address(baseToken), 0);
+        vm.stopPrank();
+    }
+
+    function testFail_EmergencyWithdrawInsufficientBalance() public {
+        vm.startPrank(admin);
+        pair.emergencyWithdraw(address(baseToken), 100e18);
         vm.stopPrank();
     }
 
@@ -311,26 +346,6 @@ contract PairTest is Test {
 
     function testFail_GetQuoteToBasePriceEmptyReserves() public view {
         pair.getQuoteToBasePrice(1e18);
-    }
-
-    function testFail_EmergencyWithdrawUnauthorized() public {
-        vm.prank(user1);
-        pair.emergencyWithdraw(address(baseToken), 100e18);
-    }
-
-    function testFail_EmergencyWithdrawZeroAddress() public {
-        vm.prank(admin);
-        pair.emergencyWithdraw(address(0), 100e18);
-    }
-
-    function testFail_EmergencyWithdrawZeroAmount() public {
-        vm.prank(admin);
-        pair.emergencyWithdraw(address(baseToken), 0);
-    }
-
-    function testFail_EmergencyWithdrawInsufficientBalance() public {
-        vm.prank(admin);
-        pair.emergencyWithdraw(address(baseToken), 100e18);
     }
 
     function test_VerifyBalancesEmpty() public view {
@@ -918,5 +933,45 @@ contract PairTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(Pair.TokenDecimalsMismatch.selector));
         new Pair(address(token8Dec), address(quoteToken), 100, admin);
+    }
+
+    function test_AddLiquidityInvalidReservesAndZeroLiquidity() public {
+        vm.startPrank(user1);
+        
+        // First test: Invalid reserves (one reserve is zero)
+        // Add initial liquidity
+        pair.addLiquidity(100e18, 100e18);
+        
+        // Remove all quote tokens through emergency withdrawal
+        vm.stopPrank();
+        vm.startPrank(admin);
+        pair.emergencyWithdraw(address(quoteToken), 100e18);
+        vm.stopPrank();
+        
+        vm.startPrank(user1);
+        // Now try to add liquidity with imbalanced reserves
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidReserves.selector));
+        pair.addLiquidity(1e18, 1e18);
+        
+        // Second test: Zero liquidity minted
+        // Reset pair state
+        vm.stopPrank();
+        vm.startPrank(admin);
+        pair = new Pair(address(baseToken), address(quoteToken), 100, admin);
+        vm.stopPrank();
+        
+        vm.startPrank(user1);
+        // Approve the new pair contract
+        baseToken.approve(address(pair), type(uint256).max);
+        quoteToken.approve(address(pair), type(uint256).max);
+        
+        // Try to add initial liquidity with tiny amounts
+        // Using extremely small amounts that would result in liquidity < MINIMUM_LIQUIDITY (1000)
+        uint256 tinyAmount = 10; // sqrt(10 * 10) = 10 < MINIMUM_LIQUIDITY (1000)
+        
+        vm.expectRevert(abi.encodeWithSelector(Pair.InsufficientLiquidityMinted.selector));
+        pair.addLiquidity(tinyAmount, tinyAmount);
+        
+        vm.stopPrank();
     }
 }

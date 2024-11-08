@@ -178,4 +178,46 @@ contract TokenTest is Test {
         token.permit(owner, user1, 500, block.timestamp + 1 hours, v, r, s);
         assertEq(token.allowance(owner, user1), 500);
     }
+
+    function testFail_EmergencyWithdrawZeroAddress() public {
+        vm.startPrank(admin);
+        token.grantRole(token.ADMIN_ROLE(), admin);
+        token.emergencyWithdraw(address(0), 100);
+        vm.stopPrank();
+    }
+
+    function testFail_EmergencyWithdrawZeroAmount() public {
+        vm.startPrank(admin);
+        token.grantRole(token.ADMIN_ROLE(), admin);
+        token.emergencyWithdraw(address(this), 0);
+        vm.stopPrank();
+    }
+
+    function testFail_EmergencyWithdrawInsufficientBalance() public {
+        Token testToken = new Token("Test Token 2", "TEST2", admin);
+        
+        vm.startPrank(admin);
+        token.grantRole(token.ADMIN_ROLE(), admin);
+        testToken.mint(address(token), 100);
+        token.emergencyWithdraw(address(testToken), 200); // Try to withdraw more than balance
+        vm.stopPrank();
+    }
+
+    function testFail_BurnInsufficientBalance() public {
+        vm.startPrank(admin);
+        token.mint(user1, 100);
+        token.burn(user1, 200); // Try to burn more than balance
+        vm.stopPrank();
+    }
+
+    function test_TimelockController() public {
+        assertEq(address(token.timelock()), address(token.timelock()));
+        assertTrue(token.timelock().hasRole(token.timelock().PROPOSER_ROLE(), admin));
+        assertTrue(token.timelock().hasRole(token.timelock().EXECUTOR_ROLE(), admin));
+        assertTrue(token.timelock().hasRole(token.timelock().CANCELLER_ROLE(), admin));
+    }
+
+    function testFail_ConstructorZeroAddress() public {
+        new Token("Test Token", "TEST", address(0));
+    }
 }
