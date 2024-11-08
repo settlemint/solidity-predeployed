@@ -792,4 +792,131 @@ contract PairTest is Test {
         pair.addLiquidity(baseAmount, imbalancedQuoteAmount);
         vm.stopPrank();
     }
+
+    // Add these new test functions after the existing tests
+
+    function test_MaxTokenAmountCheck() public {
+        vm.startPrank(user1);
+
+        // Use type(uint128).max directly as the too large amount
+        uint256 tooLarge = type(uint128).max;
+        tooLarge += 1; // This is a safer way to get the overflow value
+
+        // Try to add liquidity with amount > MAX_TOKEN_AMOUNT for base token
+        vm.expectRevert(abi.encodeWithSelector(Pair.MaxTokenAmountExceeded.selector));
+        pair.addLiquidity(tooLarge, 100e18);
+
+        // Try to add liquidity with amount > MAX_TOKEN_AMOUNT for quote token
+        vm.expectRevert(abi.encodeWithSelector(Pair.MaxTokenAmountExceeded.selector));
+        pair.addLiquidity(100e18, tooLarge);
+        vm.stopPrank();
+    }
+
+    function test_InvalidReservesSwap() public {
+        vm.startPrank(user1);
+
+        // Try to get amount of tokens with zero reserves
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidReserves.selector));
+        pair.getAmountOfTokens(100e18, 0, 100e18);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidReserves.selector));
+        pair.getAmountOfTokens(100e18, 100e18, 0);
+        vm.stopPrank();
+    }
+
+    function test_InvalidTokenAmountSwap() public {
+        vm.startPrank(user1);
+        pair.addLiquidity(100e18, 100e18);
+
+        // Try to get amount of tokens with zero input
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidTokenAmount.selector, 0));
+        pair.getAmountOfTokens(0, 100e18, 100e18);
+        vm.stopPrank();
+    }
+
+    function test_SwapDeadlineExpired() public {
+        vm.startPrank(user1);
+        pair.addLiquidity(100e18, 100e18);
+
+        // Set block number ahead of deadline
+        vm.roll(block.number + 2);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.DeadlineExpired.selector));
+        pair.swapBaseToQuote(1e18, 0, block.number - 1);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.DeadlineExpired.selector));
+        pair.swapQuoteToBase(1e18, 0, block.number - 1);
+        vm.stopPrank();
+    }
+
+    function test_SwapZeroAmount() public {
+        vm.startPrank(user1);
+        pair.addLiquidity(100e18, 100e18);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidTokenAmount.selector, 0));
+        pair.swapBaseToQuote(0, 0, block.number + 1);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidTokenAmount.selector, 0));
+        pair.swapQuoteToBase(0, 0, block.number + 1);
+        vm.stopPrank();
+    }
+
+    function test_RemoveLiquidityZero() public {
+        vm.startPrank(user1);
+        pair.addLiquidity(100e18, 100e18);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.ZeroAmount.selector));
+        pair.removeLiquidity(0, 0, 0, block.number + 1);
+        vm.stopPrank();
+    }
+
+    function test_UnauthorizedFeeChange() public {
+        vm.startPrank(user1);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.UnauthorizedTimelock.selector));
+        pair.setFee(200);
+        vm.stopPrank();
+    }
+
+    function test_InvalidFeeValue() public {
+        vm.prank(address(pair.timelock()));
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidFee.selector, 0));
+        pair.setFee(0);
+    }
+
+    function test_EmergencyWithdrawInvalidParams() public {
+        vm.startPrank(admin);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.ZeroAddress.selector));
+        pair.emergencyWithdraw(address(0), 100e18);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidAmount.selector));
+        pair.emergencyWithdraw(address(baseToken), 0);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.InsufficientBalance.selector));
+        pair.emergencyWithdraw(address(baseToken), 100e18);
+        vm.stopPrank();
+    }
+
+    function test_ConstructorValidations() public {
+        // Test same token address
+        vm.expectRevert(abi.encodeWithSelector(Pair.SameTokenAddress.selector, address(baseToken)));
+        new Pair(address(baseToken), address(baseToken), 100, admin);
+
+        // Test fee too high
+        vm.expectRevert(abi.encodeWithSelector(Pair.FeeTooHigh.selector, 1001));
+        new Pair(address(baseToken), address(quoteToken), 1001, admin);
+
+        // Test zero fee
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidFee.selector, 0));
+        new Pair(address(baseToken), address(quoteToken), 0, admin);
+
+        // Test token decimals mismatch using a mock token
+        MockERC20 token8Dec = new MockERC20();
+        token8Dec.initialize("8 Decimals", "TK8", 8);
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.TokenDecimalsMismatch.selector));
+        new Pair(address(token8Dec), address(quoteToken), 100, admin);
+    }
 }

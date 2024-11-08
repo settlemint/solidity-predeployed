@@ -152,7 +152,6 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
             " PAIR"
         )
     ) {
-        if (_baseToken == address(0) || _quoteToken == address(0)) revert ZeroAddress();
         if (_baseToken == _quoteToken) revert SameTokenAddress(_baseToken);
         if (_initialFee > MAX_FEE) revert FeeTooHigh(_initialFee);
         if (_initialFee == 0) revert InvalidFee(_initialFee);
