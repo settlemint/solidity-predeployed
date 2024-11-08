@@ -1,4 +1,4 @@
-import { constants } from '@amxx/graphprotocol-utils';
+import { constants, decimals } from '@amxx/graphprotocol-utils';
 import {
   Address
 } from '@graphprotocol/graph-ts';
@@ -33,9 +33,9 @@ export function fetchDex(address: Address): ERC20DexPair {
     let quoteReserve = quoteReserveResult.value
 
     pair.baseReserveExact = baseReserve
-    pair.baseReserve = baseReserve.toBigDecimal()
+    pair.baseReserve = decimals.toDecimals(pair.baseReserveExact, pair.decimals)
     pair.quoteReserveExact = quoteReserve
-    pair.quoteReserve = quoteReserve.toBigDecimal()
+    pair.quoteReserve = decimals.toDecimals(pair.quoteReserveExact, pair.decimals)
   }
 
   pair.baseToken = baseTokenResult.reverted ? constants.ADDRESS_ZERO : baseTokenResult.value
@@ -45,7 +45,7 @@ export function fetchDex(address: Address): ERC20DexPair {
   if (!totalSupplyResult.reverted) {
     let totalSupply = totalSupplyResult.value
     pair.totalSupplyExact = totalSupply
-    pair.totalSupply = totalSupply.toBigDecimal()
+    pair.totalSupply = decimals.toDecimals(totalSupply, pair.decimals)
   }
 
   let baseTokenPriceResult = endpoint.try_getQuoteToBasePrice(constants.BIGINT_ONE)
@@ -53,7 +53,7 @@ export function fetchDex(address: Address): ERC20DexPair {
 
   if (!baseTokenPriceResult.reverted) {
     pair.baseTokenPriceExact = baseTokenPriceResult.value
-    pair.baseTokenPrice = baseTokenPriceResult.value.toBigDecimal()
+    pair.baseTokenPrice = decimals.toDecimals(baseTokenPriceResult.value, pair.decimals)
   } else {
     pair.baseTokenPriceExact = constants.BIGINT_ZERO
     pair.baseTokenPrice = constants.BIGDECIMAL_ZERO
@@ -61,7 +61,7 @@ export function fetchDex(address: Address): ERC20DexPair {
 
   if (!quoteTokenPriceResult.reverted) {
     pair.quoteTokenPriceExact = quoteTokenPriceResult.value
-    pair.quoteTokenPrice = quoteTokenPriceResult.value.toBigDecimal()
+    pair.quoteTokenPrice = decimals.toDecimals(quoteTokenPriceResult.value, pair.decimals)
   } else {
     pair.quoteTokenPriceExact = constants.BIGINT_ZERO
     pair.quoteTokenPrice = constants.BIGDECIMAL_ZERO
