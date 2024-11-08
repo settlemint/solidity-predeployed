@@ -54,11 +54,17 @@ export function fetchDex(address: Address): ERC20DexPair {
   if (!baseTokenPriceResult.reverted) {
     pair.baseTokenPriceExact = baseTokenPriceResult.value
     pair.baseTokenPrice = baseTokenPriceResult.value.toBigDecimal()
+  } else {
+    pair.baseTokenPriceExact = constants.BIGINT_ZERO
+    pair.baseTokenPrice = constants.BIGDECIMAL_ZERO
   }
 
   if (!quoteTokenPriceResult.reverted) {
     pair.quoteTokenPriceExact = quoteTokenPriceResult.value
     pair.quoteTokenPrice = quoteTokenPriceResult.value.toBigDecimal()
+  } else {
+    pair.quoteTokenPriceExact = constants.BIGINT_ZERO
+    pair.quoteTokenPrice = constants.BIGDECIMAL_ZERO
   }
 
   pair.save()
