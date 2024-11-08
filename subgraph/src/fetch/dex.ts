@@ -11,33 +11,55 @@ export function fetchDex(address: Address): ERC20DexPair {
 
   if (pair === null) {
     pair = new ERC20DexPair(address)
-    pair.name = endpoint.name()
-    pair.symbol = endpoint.symbol()
-    pair.decimals = endpoint.decimals()
+    let nameResult = endpoint.try_name()
+    let symbolResult = endpoint.try_symbol()
+    let decimalsResult = endpoint.try_decimals()
+
+    pair.name = nameResult.reverted ? '' : nameResult.value
+    pair.symbol = symbolResult.reverted ? '' : symbolResult.value
+    pair.decimals = decimalsResult.reverted ? 0 : decimalsResult.value
     pair.asAccount = address
   }
 
-  let baseReserve = endpoint.getBaseTokenBalance()
-  let quoteReserve = endpoint.getQuoteTokenBalance()
+  let baseReserveResult = endpoint.try_getBaseTokenBalance()
+  let quoteReserveResult = endpoint.try_getQuoteTokenBalance()
+  let baseTokenResult = endpoint.try_baseToken()
+  let quoteTokenResult = endpoint.try_quoteToken()
+  let swapFeeResult = endpoint.try_swapFee()
+  let totalSupplyResult = endpoint.try_totalSupply()
 
-  pair.baseToken = endpoint.baseToken()
-  pair.quoteToken = endpoint.quoteToken()
-  pair.swapFee = endpoint.swapFee()
+  if (!baseReserveResult.reverted && !quoteReserveResult.reverted) {
+    let baseReserve = baseReserveResult.value
+    let quoteReserve = quoteReserveResult.value
 
-  pair.baseReserveExact = baseReserve
-  pair.baseReserve = baseReserve.toBigDecimal()
-  pair.quoteReserveExact = quoteReserve
-  pair.quoteReserve = quoteReserve.toBigDecimal()
+    pair.baseReserveExact = baseReserve
+    pair.baseReserve = baseReserve.toBigDecimal()
+    pair.quoteReserveExact = quoteReserve
+    pair.quoteReserve = quoteReserve.toBigDecimal()
+  }
 
-  let totalSupply = endpoint.totalSupply()
-  pair.totalSupplyExact = totalSupply
-  pair.totalSupply = totalSupply.toBigDecimal()
+  pair.baseToken = baseTokenResult.reverted ? constants.ADDRESS_ZERO : baseTokenResult.value
+  pair.quoteToken = quoteTokenResult.reverted ? constants.ADDRESS_ZERO : quoteTokenResult.value
+  pair.swapFee = swapFeeResult.reverted ? constants.BIGINT_ZERO : swapFeeResult.value
 
-  // Get prices directly from contract functions
-  pair.baseTokenPriceExact = endpoint.getQuoteToBasePrice(constants.BIGINT_ONE)
-  pair.baseTokenPrice = pair.baseTokenPriceExact.toBigDecimal()
-  pair.quoteTokenPriceExact = endpoint.getBaseToQuotePrice(constants.BIGINT_ONE)
-  pair.quoteTokenPrice = pair.quoteTokenPriceExact.toBigDecimal()
+  if (!totalSupplyResult.reverted) {
+    let totalSupply = totalSupplyResult.value
+    pair.totalSupplyExact = totalSupply
+    pair.totalSupply = totalSupply.toBigDecimal()
+  }
+
+  let baseTokenPriceResult = endpoint.try_getQuoteToBasePrice(constants.BIGINT_ONE)
+  let quoteTokenPriceResult = endpoint.try_getBaseToQuotePrice(constants.BIGINT_ONE)
+
+  if (!baseTokenPriceResult.reverted) {
+    pair.baseTokenPriceExact = baseTokenPriceResult.value
+    pair.baseTokenPrice = baseTokenPriceResult.value.toBigDecimal()
+  }
+
+  if (!quoteTokenPriceResult.reverted) {
+    pair.quoteTokenPriceExact = quoteTokenPriceResult.value
+    pair.quoteTokenPrice = quoteTokenPriceResult.value.toBigDecimal()
+  }
 
   pair.save()
   return pair as ERC20DexPair
