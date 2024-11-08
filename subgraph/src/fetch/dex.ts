@@ -48,7 +48,7 @@ export function fetchDex(address: Address): ERC20DexPair {
     pair.totalSupply = decimals.toDecimals(totalSupply, pair.decimals)
   }
 
-  let oneBig = constants.BIGINT_ONE.times(BigInt.fromI32(10).pow(pair.decimals))
+  let oneBig = constants.BIGINT_ONE.times(BigInt.fromI32(10).pow(pair.decimals as u8))
 
   let baseTokenPriceResult = endpoint.try_getQuoteToBasePrice(oneBig)
   let quoteTokenPriceResult = endpoint.try_getBaseToQuotePrice(oneBig)
