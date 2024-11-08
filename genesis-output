@@ -14,9 +14,9 @@ typeset -A CONTRACT_ADDRESSES
 ################################################################
 
 CONTRACT_ADDRESSES=(
-    "StarterKitERC20Registry" "0x5e771e1417100000000000000000000000000001"
-    "PresetStarterKitERC20Factory" "0x5e771e1417100000000000000000000000000002"
-    "StarterKitERC20DexFactory" "0x5e771e1417100000000000000000000000000003"
+    "Registry" "0x5e771e1417100000000000000000000000000001"
+    "PresetFactory" "0x5e771e1417100000000000000000000000000002"
+    "DexFactory" "0x5e771e1417100000000000000000000000000003"
 )
 
 # Initialize an empty JSON object for all allocations

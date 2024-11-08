@@ -11,7 +11,7 @@ export const TokenModule = buildModule("TokenModule", (m) => {
   const tokenAddress = m.readEventArgument(create, "TokenCreated", "tokenAddress",
     { id: "readToken1Address" }
   );
-  const token1 = m.contractAt("StarterKitERC20", tokenAddress,
+  const token1 = m.contractAt("", tokenAddress,
     { id: "contractToken1Instance" }
   );
 
@@ -22,7 +22,7 @@ export const TokenModule = buildModule("TokenModule", (m) => {
   const tokenAddress2 = m.readEventArgument(create2, "TokenCreated", "tokenAddress",
     { id: "readToken2Address" }
   );
-  const token2 = m.contractAt("StarterKitERC20", tokenAddress2,
+  const token2 = m.contractAt("", tokenAddress2,
     { id: "contractToken2Instance" }
   );
 

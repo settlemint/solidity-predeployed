@@ -1,9 +1,9 @@
 import { token } from '../../generated/templates';
 import {
-  TokenAdded as TokenAddedEvent,
-} from '../../generated/tokenregistry/StarterKitERC20Registry';
+    TokenAdded as TokenAddedEvent,
+} from '../../generated/tokenregistry/Registry';
 import {
-  fetchERC20
+    fetchERC20
 } from '../fetch/erc20';
 
 export function handleTokenAdded(event: TokenAddedEvent): void {

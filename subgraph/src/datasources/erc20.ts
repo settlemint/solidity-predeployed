@@ -1,21 +1,21 @@
 import {
-  constants,
-  decimals,
-  events,
-  transactions,
+    constants,
+    decimals,
+    events,
+    transactions,
 } from '@amxx/graphprotocol-utils';
 import { ERC20TokenVolume, ERC20Transfer } from '../../generated/schema';
 import {
-  Approval as ApprovalEvent,
-  Transfer as TransferEvent,
-} from '../../generated/templates/token/StarterKitERC20';
+    Approval as ApprovalEvent,
+    Transfer as TransferEvent,
+} from '../../generated/templates/token/';
 import {
-  fetchAccount,
+    fetchAccount,
 } from '../fetch/account';
 import {
-  fetchERC20,
-  fetchERC20Approval,
-  fetchERC20Balance,
+    fetchERC20,
+    fetchERC20Approval,
+    fetchERC20Balance,
 } from '../fetch/erc20';
 
 export function handleTransfer(event: TransferEvent): void {

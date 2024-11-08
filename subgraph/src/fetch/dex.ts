@@ -3,11 +3,11 @@ import {
   Address, BigInt
 } from '@graphprotocol/graph-ts';
 import { Account, ERC20DexPair, ERC20DexStake } from '../../generated/schema';
-import { StarterKitERC20Dex } from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex';
+import { Dex } from '../../generated/templates/Dex/Dex';
 
 export function fetchDex(address: Address): ERC20DexPair {
   let pair = ERC20DexPair.load(address)
-  let endpoint = StarterKitERC20Dex.bind(address)
+  let endpoint = Dex.bind(address)
 
   if (pair === null) {
     pair = new ERC20DexPair(address)

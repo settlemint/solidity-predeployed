@@ -14,7 +14,7 @@ export const DexModule = buildModule("DexModule", (m) => {
     id: "readPairAddress"
   });
 
-  const pair = m.contractAt("StarterKitERC20Dex", pairAddress, {
+  const pair = m.contractAt("Dex", pairAddress, {
     id: "contractPairInstance"
   });
 
