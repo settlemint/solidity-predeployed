@@ -1,6 +1,6 @@
 import { constants, decimals } from '@amxx/graphprotocol-utils';
 import {
-  Address
+  Address, BigInt
 } from '@graphprotocol/graph-ts';
 import { Account, ERC20DexPair, ERC20DexStake } from '../../generated/schema';
 import { StarterKitERC20Dex } from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex';
@@ -48,8 +48,10 @@ export function fetchDex(address: Address): ERC20DexPair {
     pair.totalSupply = decimals.toDecimals(totalSupply, pair.decimals)
   }
 
-  let baseTokenPriceResult = endpoint.try_getQuoteToBasePrice(constants.BIGINT_ONE)
-  let quoteTokenPriceResult = endpoint.try_getBaseToQuotePrice(constants.BIGINT_ONE)
+  let oneBig = constants.BIGINT_ONE.times(BigInt.fromI32(10).pow(pair.decimals))
+
+  let baseTokenPriceResult = endpoint.try_getQuoteToBasePrice(oneBig)
+  let quoteTokenPriceResult = endpoint.try_getBaseToQuotePrice(oneBig)
 
   if (!baseTokenPriceResult.reverted) {
     pair.baseTokenPriceExact = baseTokenPriceResult.value
