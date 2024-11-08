@@ -180,11 +180,11 @@ contract PairTest is Test {
 
     function test_EmergencyWithdraw() public {
         vm.startPrank(admin);
-        
+
         // First add liquidity to properly track balances
         baseToken.mint(address(pair), 100e18);
         quoteToken.mint(address(pair), 100e18);
-        
+
         // Update tracked balances by adding liquidity
         vm.stopPrank();
         vm.startPrank(user1);
@@ -192,7 +192,7 @@ contract PairTest is Test {
         quoteToken.approve(address(pair), 100e18);
         pair.addLiquidity(100e18, 100e18);
         vm.stopPrank();
-        
+
         vm.startPrank(admin);
         vm.expectEmit(true, true, true, true);
         emit EmergencyWithdraw(address(baseToken), 100e18);
@@ -635,10 +635,6 @@ contract PairTest is Test {
             pair.getQuoteTokenBalance()
         );
 
-        // Calculate fee manually
-        uint256 feeAmount = (swapAmount * pair.swapFee()) / 10000;
-        uint256 amountAfterFee = swapAmount - feeAmount;
-
         // Verify the output includes the fee
         assertTrue(expectedOutput < (swapAmount * pair.getQuoteTokenBalance()) / pair.getBaseTokenBalance());
 
@@ -937,41 +933,41 @@ contract PairTest is Test {
 
     function test_AddLiquidityInvalidReservesAndZeroLiquidity() public {
         vm.startPrank(user1);
-        
+
         // First test: Invalid reserves (one reserve is zero)
         // Add initial liquidity
         pair.addLiquidity(100e18, 100e18);
-        
+
         // Remove all quote tokens through emergency withdrawal
         vm.stopPrank();
         vm.startPrank(admin);
         pair.emergencyWithdraw(address(quoteToken), 100e18);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         // Now try to add liquidity with imbalanced reserves
         vm.expectRevert(abi.encodeWithSelector(Pair.InvalidReserves.selector));
         pair.addLiquidity(1e18, 1e18);
-        
+
         // Second test: Zero liquidity minted
         // Reset pair state
         vm.stopPrank();
         vm.startPrank(admin);
         pair = new Pair(address(baseToken), address(quoteToken), 100, admin);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         // Approve the new pair contract
         baseToken.approve(address(pair), type(uint256).max);
         quoteToken.approve(address(pair), type(uint256).max);
-        
+
         // Try to add initial liquidity with tiny amounts
         // Using extremely small amounts that would result in liquidity < MINIMUM_LIQUIDITY (1000)
         uint256 tinyAmount = 10; // sqrt(10 * 10) = 10 < MINIMUM_LIQUIDITY (1000)
-        
+
         vm.expectRevert(abi.encodeWithSelector(Pair.InsufficientLiquidityMinted.selector));
         pair.addLiquidity(tinyAmount, tinyAmount);
-        
+
         vm.stopPrank();
     }
 }

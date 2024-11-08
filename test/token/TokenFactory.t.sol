@@ -73,7 +73,7 @@ contract TokenFactoryTest is Test {
         string memory name = "Test Token";
         string memory symbol = "TEST";
 
-        address token1 = factory.createToken(name, symbol);
+        factory.createToken(name, symbol);
 
         vm.expectRevert();
         // Same parameters should revert due to same salt

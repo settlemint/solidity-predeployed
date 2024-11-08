@@ -24,7 +24,7 @@ contract TokenTest is Test {
         vm.stopPrank();
     }
 
-    function test_InitialState() public {
+    function test_InitialState() public view {
         assertEq(token.name(), "Test Token");
         assertEq(token.symbol(), "TEST");
         assertEq(token.totalSupply(), 0);
@@ -105,13 +105,13 @@ contract TokenTest is Test {
         Token testToken = new Token("Test Token 2", "TEST2", admin);
         vm.startPrank(admin);
         testToken.mint(address(token), 1000);
-        
+
         // Grant ADMIN_ROLE to admin for emergencyWithdraw
         token.grantRole(token.ADMIN_ROLE(), admin);
-        
+
         vm.expectEmit(true, true, true, true);
         emit EmergencyWithdraw(address(testToken), 1000);
-        
+
         token.emergencyWithdraw(address(testToken), 1000);
         assertEq(testToken.balanceOf(admin), 1000);
         vm.stopPrank();
@@ -195,7 +195,7 @@ contract TokenTest is Test {
 
     function testFail_EmergencyWithdrawInsufficientBalance() public {
         Token testToken = new Token("Test Token 2", "TEST2", admin);
-        
+
         vm.startPrank(admin);
         token.grantRole(token.ADMIN_ROLE(), admin);
         testToken.mint(address(token), 100);
@@ -210,7 +210,7 @@ contract TokenTest is Test {
         vm.stopPrank();
     }
 
-    function test_TimelockController() public {
+    function test_TimelockController() public view {
         assertEq(address(token.timelock()), address(token.timelock()));
         assertTrue(token.timelock().hasRole(token.timelock().PROPOSER_ROLE(), admin));
         assertTrue(token.timelock().hasRole(token.timelock().EXECUTOR_ROLE(), admin));

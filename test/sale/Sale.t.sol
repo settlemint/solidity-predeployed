@@ -40,7 +40,7 @@ contract SaleTest is Test {
         paymentToken.approve(address(sale), type(uint256).max);
     }
 
-    function test_InitialState() public {
+    function test_InitialState() public view {
         assertEq(address(sale.saleToken()), address(saleToken));
         assertEq(address(sale.paymentToken()), address(paymentToken));
         assertEq(sale.price(), 1e18);
