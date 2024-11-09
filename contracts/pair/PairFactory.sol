@@ -8,7 +8,7 @@ import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol"
 /// @notice Factory contract for creating and managing Dex pairs
 /// @dev Creates and tracks ERC20-ERC20 trading pairs
 contract PairFactory is AccessControl {
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant FACTORY_ROLE = keccak256("FACTORY_ROLE");
 
     /// @notice Thrown when input validation fails
     error InvalidInput(string message);
@@ -29,9 +29,9 @@ contract PairFactory is AccessControl {
     /// @notice Array containing addresses of all created pairs
     address[] public allPairs;
 
-    constructor(address admin) {
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(ADMIN_ROLE, admin);
+    constructor() {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(FACTORY_ROLE, msg.sender);
     }
 
     /// @notice Returns the total number of pairs created
@@ -44,7 +44,7 @@ contract PairFactory is AccessControl {
     /// @param baseToken Address of the base token
     /// @param quoteToken Address of the quote token
     /// @return pair Address of the newly created pair
-    function createPair(address baseToken, address quoteToken) external onlyRole(ADMIN_ROLE) returns (address pair) {
+    function createPair(address baseToken, address quoteToken) external onlyRole(FACTORY_ROLE) returns (address pair) {
         if (baseToken == quoteToken) {
             revert InvalidInput("Identical addresses");
         }

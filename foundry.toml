@@ -1,7 +1,3 @@
-[profile.ci]
-  fuzz = { runs = 10_000 }
-  verbosity = 4
-
 [fmt]
   bracket_spacing = true
   int_types = "long"

@@ -9,7 +9,7 @@ import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol"
 /// @custom:security-contact security@settlemint.com
 contract TokenFactory is AccessControl {
     /// @notice Role identifier for administrators
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant FACTORY_ROLE = keccak256("FACTORY_ROLE");
 
     /// @notice Thrown when input validation fails
     error InvalidInput(string message);
@@ -25,16 +25,23 @@ contract TokenFactory is AccessControl {
     /// @notice Array of all created tokens
     address[] public allTokens;
 
-    constructor(address admin) {
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(ADMIN_ROLE, admin);
+    constructor() {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(FACTORY_ROLE, msg.sender);
     }
 
     /// @notice Creates a new  token
     /// @param name_ The name of the new token
     /// @param symbol_ The symbol of the new token
     /// @return token The address of the newly created token
-    function createToken(string calldata name_, string calldata symbol_) external returns (address token) {
+    function createToken(
+        string calldata name_,
+        string calldata symbol_
+    )
+        external
+        onlyRole(FACTORY_ROLE)
+        returns (address token)
+    {
         if (msg.sender == address(0)) {
             revert InvalidInput("Zero sender address");
         }
