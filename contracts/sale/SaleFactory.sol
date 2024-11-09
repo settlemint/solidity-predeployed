@@ -11,12 +11,10 @@ contract SaleFactory is AccessControl {
     /// @notice Role identifier for administrators
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
-    /// @notice Thrown when zero address provided
-    error ZeroAddress();
-    /// @notice Thrown when sale already exists for token
-    error SaleExists();
-    /// @notice Thrown when identical token addresses provided
-    error IdenticalAddresses();
+    /// @notice Thrown when input validation fails
+    error InvalidInput(string message);
+    /// @notice Thrown when operation validation fails
+    error InvalidOperation(string message);
 
     /// @notice Emitted when a new sale is created
     /// @param saleAddress The address of the newly created sale contract
@@ -24,10 +22,7 @@ contract SaleFactory is AccessControl {
     /// @param paymentToken The token used for payment
     /// @param price The initial price set for the sale
     event SaleCreated(
-        address indexed saleAddress,
-        address indexed saleToken,
-        address indexed paymentToken,
-        uint256 price
+        address indexed saleAddress, address indexed saleToken, address indexed paymentToken, uint256 price
     );
 
     /// @notice Maps sale token to its sale contract address
@@ -49,18 +44,23 @@ contract SaleFactory is AccessControl {
         address saleToken,
         address paymentToken,
         uint256 initialPrice
-    ) external onlyRole(ADMIN_ROLE) returns (address sale) {
-        if (saleToken == address(0) || paymentToken == address(0)) revert ZeroAddress();
-        if (saleToken == paymentToken) revert IdenticalAddresses();
-        if (getSale[saleToken] != address(0)) revert SaleExists();
+    )
+        external
+        onlyRole(ADMIN_ROLE)
+        returns (address sale)
+    {
+        if (saleToken == address(0) || paymentToken == address(0)) {
+            revert InvalidInput("Zero address");
+        }
+        if (saleToken == paymentToken) {
+            revert InvalidInput("Identical addresses");
+        }
+        if (getSale[saleToken] != address(0)) {
+            revert InvalidOperation("Sale exists");
+        }
 
         bytes32 salt = keccak256(abi.encodePacked(saleToken, paymentToken, msg.sender));
-        Sale newSale = new Sale{salt: salt}(
-            saleToken,
-            paymentToken,
-            initialPrice,
-            msg.sender
-        );
+        Sale newSale = new Sale{ salt: salt }(saleToken, paymentToken, initialPrice, msg.sender);
 
         sale = address(newSale);
         getSale[saleToken] = sale;

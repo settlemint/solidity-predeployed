@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Token} from "../../contracts/token/Token.sol";
-import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 
 contract TokenTest is Test {
     Token public token;
@@ -29,9 +28,7 @@ contract TokenTest is Test {
         assertEq(token.symbol(), "TEST");
         assertEq(token.totalSupply(), 0);
         assertTrue(token.hasRole(token.DEFAULT_ADMIN_ROLE(), admin));
-        assertTrue(token.hasRole(token.MINTER_ROLE(), admin));
-        assertTrue(token.hasRole(token.PAUSER_ROLE(), admin));
-        assertTrue(token.hasRole(token.BURNER_ROLE(), admin));
+        assertTrue(token.hasRole(token.ADMIN_ROLE(), admin));
     }
 
     function test_Mint() public {
@@ -46,14 +43,18 @@ contract TokenTest is Test {
         token.mint(user1, 1000);
     }
 
-    function testFail_MintToZeroAddress() public {
-        vm.prank(admin);
+    function test_MintToZeroAddress() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero recipient address"));
         token.mint(address(0), 1000);
+        vm.stopPrank();
     }
 
-    function testFail_MintZeroAmount() public {
-        vm.prank(admin);
+    function test_MintZeroAmount() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero amount"));
         token.mint(user1, 0);
+        vm.stopPrank();
     }
 
     function test_Burn() public {
@@ -72,14 +73,18 @@ contract TokenTest is Test {
         token.burn(user1, 500);
     }
 
-    function testFail_BurnFromZeroAddress() public {
-        vm.prank(admin);
+    function test_BurnFromZeroAddress() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero address"));
         token.burn(address(0), 500);
+        vm.stopPrank();
     }
 
-    function testFail_BurnZeroAmount() public {
-        vm.prank(admin);
+    function test_BurnZeroAmount() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero amount"));
         token.burn(user1, 0);
+        vm.stopPrank();
     }
 
     function test_Pause() public {
@@ -179,45 +184,40 @@ contract TokenTest is Test {
         assertEq(token.allowance(owner, user1), 500);
     }
 
-    function testFail_EmergencyWithdrawZeroAddress() public {
+    function test_EmergencyWithdrawZeroAddress() public {
         vm.startPrank(admin);
-        token.grantRole(token.ADMIN_ROLE(), admin);
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero token address"));
         token.emergencyWithdraw(address(0), 100);
         vm.stopPrank();
     }
 
-    function testFail_EmergencyWithdrawZeroAmount() public {
+    function test_EmergencyWithdrawZeroAmount() public {
         vm.startPrank(admin);
-        token.grantRole(token.ADMIN_ROLE(), admin);
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero amount"));
         token.emergencyWithdraw(address(this), 0);
         vm.stopPrank();
     }
 
-    function testFail_EmergencyWithdrawInsufficientBalance() public {
+    function test_EmergencyWithdrawInsufficientBalance() public {
         Token testToken = new Token("Test Token 2", "TEST2", admin);
-
         vm.startPrank(admin);
-        token.grantRole(token.ADMIN_ROLE(), admin);
         testToken.mint(address(token), 100);
-        token.emergencyWithdraw(address(testToken), 200); // Try to withdraw more than balance
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidOperation.selector, "Insufficient balance"));
+        token.emergencyWithdraw(address(testToken), 200);
         vm.stopPrank();
     }
 
-    function testFail_BurnInsufficientBalance() public {
+    function test_BurnInsufficientBalance() public {
         vm.startPrank(admin);
         token.mint(user1, 100);
-        token.burn(user1, 200); // Try to burn more than balance
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidOperation.selector, "Insufficient balance"));
+        token.burn(user1, 200);
         vm.stopPrank();
     }
 
-    function test_TimelockController() public view {
-        assertEq(address(token.timelock()), address(token.timelock()));
-        assertTrue(token.timelock().hasRole(token.timelock().PROPOSER_ROLE(), admin));
-        assertTrue(token.timelock().hasRole(token.timelock().EXECUTOR_ROLE(), admin));
-        assertTrue(token.timelock().hasRole(token.timelock().CANCELLER_ROLE(), admin));
-    }
-
-    function testFail_ConstructorZeroAddress() public {
+    // Add this test to check constructor zero address validation
+    function test_ConstructorZeroAddress() public {
+        vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero admin address"));
         new Token("Test Token", "TEST", address(0));
     }
 }

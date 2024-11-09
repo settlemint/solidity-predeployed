@@ -8,9 +8,8 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title Dex
 /// @notice Implements an automated market maker DEX for ERC20 token pairs
@@ -20,49 +19,13 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
 
     /// @notice Role identifier for administrators
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    /// @notice Role identifier for fee setters
-    bytes32 public constant FEE_SETTER_ROLE = keccak256("FEE_SETTER_ROLE");
-    /// @notice Role identifier for emergency withdrawers
-    bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
 
-    /// @notice Thrown when same token address is used for both tokens
-    error SameTokenAddress(address token);
-    /// @notice Thrown when reserves are invalid (zero)
-    error InvalidReserves();
-    /// @notice Thrown when provided amount ratio doesn't match expected
-    error AmountRatioMismatch(uint256 provided, uint256 expected);
-    /// @notice Thrown when amount is zero
-    error ZeroAmount();
-    /// @notice Thrown when insufficient liquidity would be minted
-    error InsufficientLiquidityMinted();
-    /// @notice Thrown when token amount is invalid
-    error InvalidTokenAmount(uint256 amount);
-    /// @notice Thrown when fee is invalid (zero)
-    error InvalidFee(uint256 fee);
-    /// @notice Thrown when fee exceeds maximum
-    error FeeTooHigh(uint256 fee);
-    /// @notice Thrown when deadline has expired
-    error DeadlineExpired();
-    /// @notice Thrown when slippage tolerance is exceeded
-    error SlippageExceeded();
-    /// @notice Thrown when zero address is provided
-    error ZeroAddress();
-    /// @notice Thrown when token is not a valid ERC20
-    error InvalidERC20();
-    /// @notice Thrown when token decimals don't match
-    error TokenDecimalsMismatch();
-    /// @notice Thrown when token amount exceeds maximum
-    error MaxTokenAmountExceeded();
-    /// @notice Thrown when tracked balances don't match actual balances
-    error BalanceMismatch();
-    /// @notice Thrown when swap amount is too large relative to reserves
-    error SwapAmountTooLarge(uint256 amount, uint256 maxAmount);
-    /// @notice Thrown when caller is not timelock contract
-    error UnauthorizedTimelock();
-    /// @notice Thrown when amount is invalid (zero)
-    error InvalidAmount();
-    /// @notice Thrown when balance is insufficient
-    error InsufficientBalance();
+    /// @notice Thrown when input validation fails
+    error InvalidInput(string message);
+    /// @notice Thrown when operation validation fails
+    error InvalidOperation(string message);
+    /// @notice Thrown when security check fails
+    error SecurityError(string message);
 
     /// @notice Emitted when liquidity is added
     /// @param sender Address adding liquidity
@@ -86,7 +49,14 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     /// @param baseAmountOut Amount of base token output
     /// @param quoteAmountOut Amount of quote token output
     /// @param to Address receiving output tokens
-    event Swap(address indexed sender, uint256 baseAmountIn, uint256 quoteAmountIn, uint256 baseAmountOut, uint256 quoteAmountOut, address indexed to);
+    event Swap(
+        address indexed sender,
+        uint256 baseAmountIn,
+        uint256 quoteAmountIn,
+        uint256 baseAmountOut,
+        uint256 quoteAmountOut,
+        address indexed to
+    );
 
     /// @notice Emitted when fee is updated
     /// @param oldFee Previous fee value
@@ -102,8 +72,6 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     address public immutable baseToken;
     /// @notice Address of quote token in pair
     address public immutable quoteToken;
-    /// @notice Address of timelock controller
-    TimelockController public immutable timelock;
 
     /// @notice Current swap fee (in basis points)
     uint96 public swapFee;
@@ -131,37 +99,28 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
         address _quoteToken,
         uint256 _initialFee,
         address _admin
-    ) ERC20(
-        string.concat(
-            IERC20Metadata(_baseToken).symbol(),
-            "/",
-            IERC20Metadata(_quoteToken).symbol(),
-            " PAIR"
-        ),
-        string.concat(
-            IERC20Metadata(_baseToken).symbol(),
-            "-",
-            IERC20Metadata(_quoteToken).symbol(),
-            "-PAIR"
+    )
+        ERC20(
+            string.concat(IERC20Metadata(_baseToken).symbol(), "/", IERC20Metadata(_quoteToken).symbol(), " PAIR"),
+            string.concat(IERC20Metadata(_baseToken).symbol(), "-", IERC20Metadata(_quoteToken).symbol(), "-P")
         )
-    ) ERC20Permit(
-        string.concat(
-            IERC20Metadata(_baseToken).symbol(),
-            "/",
-            IERC20Metadata(_quoteToken).symbol(),
-            " PAIR"
-        )
-    ) {
-        if (_baseToken == _quoteToken) revert SameTokenAddress(_baseToken);
-        if (_initialFee > MAX_FEE) revert FeeTooHigh(_initialFee);
-        if (_initialFee == 0) revert InvalidFee(_initialFee);
-
-        try IERC20(_baseToken).totalSupply() {} catch { revert InvalidERC20(); }
-        try IERC20(_quoteToken).totalSupply() {} catch { revert InvalidERC20(); }
+        ERC20Permit(string.concat(IERC20Metadata(_baseToken).symbol(), "/", IERC20Metadata(_quoteToken).symbol(), " PAIR"))
+    {
+        if (_baseToken == _quoteToken) {
+            revert InvalidInput("Same token address");
+        }
+        if (_initialFee > MAX_FEE) {
+            revert InvalidInput("Fee too high");
+        }
+        if (_initialFee == 0) {
+            revert InvalidInput("Zero fee");
+        }
 
         uint8 baseDecimals = ERC20Permit(_baseToken).decimals();
         uint8 quoteDecimals = ERC20Permit(_quoteToken).decimals();
-        if (baseDecimals != quoteDecimals) revert TokenDecimalsMismatch();
+        if (baseDecimals != quoteDecimals) {
+            revert InvalidInput("Token decimals mismatch");
+        }
 
         baseToken = _baseToken;
         quoteToken = _quoteToken;
@@ -169,14 +128,6 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(ADMIN_ROLE, _admin);
-        _grantRole(FEE_SETTER_ROLE, _admin);
-        _grantRole(EMERGENCY_ROLE, _admin);
-
-        address[] memory proposers = new address[](1);
-        address[] memory executors = new address[](1);
-        proposers[0] = _admin;
-        executors[0] = _admin;
-        timelock = new TimelockController(2 days, proposers, executors, _admin);
     }
 
     /// @notice Pauses all swap and liquidity operations
@@ -191,9 +142,8 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
 
     /// @notice Updates the swap fee
     /// @param _newFee New fee value in basis points
-    function setFee(uint256 _newFee) external {
-        if (msg.sender != address(timelock)) revert UnauthorizedTimelock();
-        if (_newFee == 0) revert InvalidFee(_newFee);
+    function setFee(uint256 _newFee) external onlyRole(ADMIN_ROLE) {
+        if (_newFee == 0) revert InvalidInput("Zero fee");
         emit FeeUpdated(swapFee, _newFee);
         swapFee = uint96(_newFee);
     }
@@ -215,8 +165,9 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     /// @param quoteAmount Amount of quote token to add
     /// @return Amount of PAIR tokens minted
     function addLiquidity(uint256 baseAmount, uint256 quoteAmount) public nonReentrant returns (uint256) {
-        if (baseAmount > MAX_TOKEN_AMOUNT || quoteAmount > MAX_TOKEN_AMOUNT)
-            revert MaxTokenAmountExceeded();
+        if (baseAmount > MAX_TOKEN_AMOUNT || quoteAmount > MAX_TOKEN_AMOUNT) {
+            revert InvalidInput("Amount exceeds maximum");
+        }
 
         uint256 _liquidity;
         uint256 baseBalance = getBaseTokenBalance();
@@ -224,7 +175,9 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
 
         if (baseBalance == 0 && quoteBalance == 0) {
             _liquidity = Math.sqrt(baseAmount * quoteAmount);
-            if (_liquidity <= MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
+            if (_liquidity <= MINIMUM_LIQUIDITY) {
+                revert InvalidOperation("Insufficient liquidity");
+            }
 
             // Effects before interactions
             _mint(address(1), MINIMUM_LIQUIDITY);
@@ -235,18 +188,20 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
             IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
             IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
         } else {
-            if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
+            if (baseBalance == 0 || quoteBalance == 0) {
+                revert InvalidOperation("Invalid reserves");
+            }
 
             uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
-            uint256 lowerBound = (expectedQuoteAmount * (10000 - AMOUNT_TOLERANCE)) / 10000;
-            uint256 upperBound = (expectedQuoteAmount * (10000 + AMOUNT_TOLERANCE)) / 10000;
+            uint256 lowerBound = (expectedQuoteAmount * (10_000 - AMOUNT_TOLERANCE)) / 10_000;
+            uint256 upperBound = (expectedQuoteAmount * (10_000 + AMOUNT_TOLERANCE)) / 10_000;
 
             if (quoteAmount < lowerBound || quoteAmount > upperBound) {
-                revert AmountRatioMismatch(quoteAmount, expectedQuoteAmount);
+                revert InvalidInput("Amount ratio mismatch");
             }
 
             _liquidity = (totalSupply() * baseAmount) / baseBalance;
-            if (_liquidity == 0) revert InsufficientLiquidityMinted();
+            if (_liquidity == 0) revert InvalidOperation("Insufficient liquidity");
 
             // Effects before interactions
             _mint(msg.sender, _liquidity);
@@ -273,16 +228,21 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
         uint256 minBaseAmount,
         uint256 minQuoteAmount,
         uint256 deadline
-    ) public nonReentrant whenNotPaused returns (uint256, uint256) {
+    )
+        public
+        whenNotPaused
+        nonReentrant
+        returns (uint256, uint256)
+    {
         requireValidBalances();
-        if (block.number > deadline) revert DeadlineExpired();
-        if (amount == 0) revert ZeroAmount();
+        if (block.number > deadline) revert InvalidOperation("Deadline expired");
+        if (amount == 0) revert InvalidInput("Zero amount");
 
         uint256 _totalSupply = totalSupply();
         uint256 baseAmount = (amount * getBaseTokenBalance()) / _totalSupply;
         uint256 quoteAmount = (amount * getQuoteTokenBalance()) / _totalSupply;
 
-        if (baseAmount < minBaseAmount || quoteAmount < minQuoteAmount) revert SlippageExceeded();
+        if (baseAmount < minBaseAmount || quoteAmount < minQuoteAmount) revert InvalidOperation("Slippage exceeded");
 
         // Effects before interactions
         _burn(msg.sender, amount);
@@ -307,14 +267,18 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
         uint256 inputAmount,
         uint256 inputReserve,
         uint256 outputReserve
-    ) public view returns (uint256) {
-        if (inputReserve == 0 || outputReserve == 0) revert InvalidReserves();
-        if (inputAmount == 0) revert InvalidTokenAmount(inputAmount);
+    )
+        public
+        view
+        returns (uint256)
+    {
+        if (inputReserve == 0 || outputReserve == 0) revert InvalidOperation("Invalid reserves");
+        if (inputAmount == 0) revert InvalidInput("Zero amount");
 
         unchecked {
-            uint256 inputAmountWithFee = inputAmount * (10000 - swapFee);
+            uint256 inputAmountWithFee = inputAmount * (10_000 - swapFee);
             uint256 numerator = inputAmountWithFee * outputReserve;
-            uint256 denominator = (inputReserve * 10000) + inputAmountWithFee;
+            uint256 denominator = (inputReserve * 10_000) + inputAmountWithFee;
             return numerator / denominator;
         }
     }
@@ -327,23 +291,23 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
         uint256 baseAmount,
         uint256 minQuoteAmount,
         uint256 deadline
-    ) public nonReentrant whenNotPaused {
+    )
+        public
+        whenNotPaused
+        nonReentrant
+    {
         requireValidBalances();
         uint256 initialBalance = getBaseTokenBalance();
         uint256 maxSwapAmount = (initialBalance * 3) / 100;
         if (baseAmount > maxSwapAmount) {
-            revert SwapAmountTooLarge(baseAmount, maxSwapAmount);
+            revert InvalidOperation("Swap amount too large");
         }
-        if (block.number > deadline) revert DeadlineExpired();
-        if (baseAmount == 0) revert InvalidTokenAmount(baseAmount);
+        if (block.number > deadline) revert InvalidOperation("Deadline expired");
+        if (baseAmount == 0) revert InvalidInput("Zero amount");
 
-        uint256 quoteBought = getAmountOfTokens(
-            baseAmount,
-            getBaseTokenBalance(),
-            getQuoteTokenBalance()
-        );
+        uint256 quoteBought = getAmountOfTokens(baseAmount, getBaseTokenBalance(), getQuoteTokenBalance());
 
-        if (quoteBought < minQuoteAmount) revert SlippageExceeded();
+        if (quoteBought < minQuoteAmount) revert InvalidOperation("Slippage exceeded");
 
         // Effects before interactions
         emit Swap(msg.sender, baseAmount, 0, 0, quoteBought, msg.sender);
@@ -363,18 +327,18 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
         uint256 quoteAmount,
         uint256 minBaseAmount,
         uint256 deadline
-    ) public nonReentrant whenNotPaused {
+    )
+        public
+        whenNotPaused
+        nonReentrant
+    {
         requireValidBalances();
-        if (block.number > deadline) revert DeadlineExpired();
-        if (quoteAmount == 0) revert InvalidTokenAmount(quoteAmount);
+        if (block.number > deadline) revert InvalidOperation("Deadline expired");
+        if (quoteAmount == 0) revert InvalidInput("Zero amount");
 
-        uint256 baseBought = getAmountOfTokens(
-            quoteAmount,
-            getQuoteTokenBalance(),
-            getBaseTokenBalance()
-        );
+        uint256 baseBought = getAmountOfTokens(quoteAmount, getQuoteTokenBalance(), getBaseTokenBalance());
 
-        if (baseBought < minBaseAmount) revert SlippageExceeded();
+        if (baseBought < minBaseAmount) revert InvalidOperation("Slippage exceeded");
 
         // Effects before interactions
         emit Swap(msg.sender, 0, quoteAmount, baseBought, 0, msg.sender);
@@ -389,21 +353,24 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     /// @notice Emergency withdrawal of tokens
     /// @param token Address of token to withdraw
     /// @param amount Amount to withdraw
-    function emergencyWithdraw(
-        address token,
-        uint256 amount
-    ) external onlyRole(EMERGENCY_ROLE) nonReentrant {
-        if(token == address(0)) revert ZeroAddress();
-        if(amount == 0) revert InvalidAmount();
-        if(amount > IERC20(token).balanceOf(address(this))) revert InsufficientBalance();
-        
+    function emergencyWithdraw(address token, uint256 amount) external onlyRole(ADMIN_ROLE) nonReentrant {
+        if (token == address(0)) {
+            revert InvalidInput("Zero address");
+        }
+        if (amount == 0) {
+            revert InvalidInput("Zero amount");
+        }
+        if (amount > IERC20(token).balanceOf(address(this))) {
+            revert InvalidOperation("Insufficient balance");
+        }
+
         // Update tracked balances
-        if(token == baseToken) {
+        if (token == baseToken) {
             _trackedBaseBalance -= uint128(amount);
-        } else if(token == quoteToken) {
+        } else if (token == quoteToken) {
             _trackedQuoteBalance -= uint128(amount);
         }
-        
+
         IERC20(token).safeTransfer(msg.sender, amount);
         emit EmergencyWithdraw(token, amount);
     }
@@ -412,34 +379,14 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     /// @param baseAmount Amount of base token input
     /// @return Amount of quote tokens output
     function getBaseToQuotePrice(uint256 baseAmount) external view returns (uint256) {
-        uint256 baseBalance = getBaseTokenBalance();
-        uint256 quoteBalance = getQuoteTokenBalance();
-
-        if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
-        if (baseAmount == 0) revert InvalidTokenAmount(0);
-
-        return getAmountOfTokens(
-            baseAmount,
-            baseBalance,
-            quoteBalance
-        );
+        return _getPrice(baseAmount, true);
     }
 
     /// @notice Calculates base token output for quote token input
     /// @param quoteAmount Amount of quote token input
     /// @return Amount of base tokens output
     function getQuoteToBasePrice(uint256 quoteAmount) external view returns (uint256) {
-        uint256 baseBalance = getBaseTokenBalance();
-        uint256 quoteBalance = getQuoteTokenBalance();
-
-        if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
-        if (quoteAmount == 0) revert InvalidTokenAmount(0);
-
-        return getAmountOfTokens(
-            quoteAmount,
-            quoteBalance,
-            baseBalance
-        );
+        return _getPrice(quoteAmount, false);
     }
 
     /// @notice Verifies that tracked balances match actual balances
@@ -457,7 +404,7 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
 
     /// @notice Requires that balances are valid
     function requireValidBalances() internal view {
-        if (!verifyBalances()) revert BalanceMismatch();
+        if (!verifyBalances()) revert InvalidOperation("Balance mismatch");
     }
 
     /// @notice Calculates absolute difference between two numbers
@@ -466,5 +413,15 @@ contract Pair is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     /// @return Absolute difference
     function _abs(uint256 a, uint256 b) internal pure returns (uint256) {
         return a >= b ? a - b : b - a;
+    }
+
+    function _getPrice(uint256 amount, bool isBase) private view returns (uint256) {
+        uint256 inputBalance = isBase ? getBaseTokenBalance() : getQuoteTokenBalance();
+        uint256 outputBalance = isBase ? getQuoteTokenBalance() : getBaseTokenBalance();
+
+        if (inputBalance == 0 || outputBalance == 0) revert InvalidOperation("Invalid reserves");
+        if (amount == 0) revert InvalidInput("Zero amount");
+
+        return getAmountOfTokens(amount, inputBalance, outputBalance);
     }
 }

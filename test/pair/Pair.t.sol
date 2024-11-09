@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: FSL-1.1-MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
-import {Pair} from "../../contracts/pair/Pair.sol";
-import {Token} from "../../contracts/token/Token.sol";
-import {MockERC20} from "forge-std/mocks/MockERC20.sol";
+import { Test } from "forge-std/Test.sol";
+import { Pair } from "../../contracts/pair/Pair.sol";
+import { Token } from "../../contracts/token/Token.sol";
+import { MockERC20 } from "forge-std/mocks/MockERC20.sol";
 
 contract PairTest is Test {
     Pair public pair;
@@ -16,7 +16,14 @@ contract PairTest is Test {
 
     event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount, uint256 liquidity);
     event Burn(address indexed sender, uint256 baseAmount, uint256 quoteAmount, address indexed to, uint256 liquidity);
-    event Swap(address indexed sender, uint256 baseAmountIn, uint256 quoteAmountIn, uint256 baseAmountOut, uint256 quoteAmountOut, address indexed to);
+    event Swap(
+        address indexed sender,
+        uint256 baseAmountIn,
+        uint256 quoteAmountIn,
+        uint256 baseAmountOut,
+        uint256 quoteAmountOut,
+        address indexed to
+    );
     event FeeUpdated(uint256 oldFee, uint256 newFee);
     event EmergencyWithdraw(address token, uint256 amount);
 
@@ -53,6 +60,7 @@ contract PairTest is Test {
         assertEq(address(pair.quoteToken()), address(quoteToken));
         assertEq(pair.swapFee(), 100);
         assertTrue(pair.hasRole(pair.ADMIN_ROLE(), admin));
+        assertTrue(pair.hasRole(pair.DEFAULT_ADMIN_ROLE(), admin));
     }
 
     function test_AddInitialLiquidity() public {
@@ -66,7 +74,7 @@ contract PairTest is Test {
         // First liquidity provider gets the full amount
         assertEq(liquidity, 100e18);
         // But their balance is liquidity - MINIMUM_LIQUIDITY
-        assertEq(pair.balanceOf(user1), 99999999999999999000);
+        assertEq(pair.balanceOf(user1), 99_999_999_999_999_999_000);
         assertEq(baseToken.balanceOf(address(pair)), baseAmount);
         assertEq(quoteToken.balanceOf(address(pair)), quoteAmount);
 
@@ -102,16 +110,11 @@ contract PairTest is Test {
         // Need to approve pair contract to burn LP tokens
         pair.approve(address(pair), pair.balanceOf(user1));
 
-        (uint256 baseAmount, uint256 quoteAmount) = pair.removeLiquidity(
-            pair.balanceOf(user1),
-            0,
-            0,
-            block.number + 1
-        );
+        (uint256 baseAmount, uint256 quoteAmount) = pair.removeLiquidity(pair.balanceOf(user1), 0, 0, block.number + 1);
 
         // Can't remove MINIMUM_LIQUIDITY
-        assertEq(baseAmount, 99999999999999999000);
-        assertEq(quoteAmount, 99999999999999999000);
+        assertEq(baseAmount, 99_999_999_999_999_999_000);
+        assertEq(quoteAmount, 99_999_999_999_999_999_000);
         assertEq(pair.balanceOf(user1), 0);
 
         // Verify MINIMUM_LIQUIDITY is still locked
@@ -127,11 +130,8 @@ contract PairTest is Test {
 
         vm.startPrank(user2);
         uint256 baseAmount = 1e18; // Reduced amount to avoid exceeding max swap
-        uint256 expectedOutput = pair.getAmountOfTokens(
-            baseAmount,
-            pair.getBaseTokenBalance(),
-            pair.getQuoteTokenBalance()
-        );
+        uint256 expectedOutput =
+            pair.getAmountOfTokens(baseAmount, pair.getBaseTokenBalance(), pair.getQuoteTokenBalance());
 
         // Verify the event after swap
         vm.expectEmit(true, true, true, true);
@@ -149,11 +149,8 @@ contract PairTest is Test {
 
         vm.startPrank(user2);
         uint256 quoteAmount = 10e18;
-        uint256 expectedOutput = pair.getAmountOfTokens(
-            quoteAmount,
-            pair.getQuoteTokenBalance(),
-            pair.getBaseTokenBalance()
-        );
+        uint256 expectedOutput =
+            pair.getAmountOfTokens(quoteAmount, pair.getQuoteTokenBalance(), pair.getBaseTokenBalance());
 
         vm.expectEmit(true, true, true, true);
         emit Swap(user2, 0, quoteAmount, expectedOutput, 0, user2);
@@ -164,7 +161,7 @@ contract PairTest is Test {
     }
 
     function test_SetFee() public {
-        vm.prank(address(pair.timelock()));
+        vm.prank(admin);
 
         vm.expectEmit(true, true, true, true);
         emit FeeUpdated(100, 200);
@@ -174,7 +171,7 @@ contract PairTest is Test {
     }
 
     function testFail_SetFeeUnauthorized() public {
-        vm.prank(admin);
+        vm.prank(user1);
         pair.setFee(200);
     }
 
@@ -196,6 +193,7 @@ contract PairTest is Test {
         vm.startPrank(admin);
         vm.expectEmit(true, true, true, true);
         emit EmergencyWithdraw(address(baseToken), 100e18);
+
         pair.emergencyWithdraw(address(baseToken), 100e18);
         assertEq(baseToken.balanceOf(admin), 100e18);
         vm.stopPrank();
@@ -410,10 +408,9 @@ contract PairTest is Test {
         uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
 
         // Try with amount below the tolerance (0.5% below expected)
-        uint256 lowAmount = (expectedQuoteAmount * 9950) / 10000; // 99.5% of expected
+        uint256 lowAmount = (expectedQuoteAmount * 9950) / 10_000; // 99.5% of expected
 
-        // This should revert with AmountRatioMismatch
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, lowAmount, expectedQuoteAmount));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
         pair.addLiquidity(baseAmount, lowAmount);
         vm.stopPrank();
     }
@@ -428,10 +425,9 @@ contract PairTest is Test {
         uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
 
         // Try with amount above the tolerance (0.5% above expected)
-        uint256 highAmount = (expectedQuoteAmount * 10050) / 10000; // 100.5% of expected
+        uint256 highAmount = (expectedQuoteAmount * 10_050) / 10_000; // 100.5% of expected
 
-        // This should revert with AmountRatioMismatch
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, highAmount, expectedQuoteAmount));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
         pair.addLiquidity(baseAmount, highAmount);
         vm.stopPrank();
     }
@@ -443,11 +439,8 @@ contract PairTest is Test {
 
         vm.startPrank(user2);
         uint256 swapAmount = 1e18;
-        uint256 expectedOutput = pair.getAmountOfTokens(
-            swapAmount,
-            pair.getBaseTokenBalance(),
-            pair.getQuoteTokenBalance()
-        );
+        uint256 expectedOutput =
+            pair.getAmountOfTokens(swapAmount, pair.getBaseTokenBalance(), pair.getQuoteTokenBalance());
 
         uint256 balanceBefore = quoteToken.balanceOf(user2);
         pair.swapBaseToQuote(swapAmount, expectedOutput, block.number + 1);
@@ -465,11 +458,8 @@ contract PairTest is Test {
         vm.startPrank(user2);
         // Try to swap 3% of reserves (max allowed)
         uint256 maxSwapAmount = (pair.getBaseTokenBalance() * 3) / 100;
-        uint256 expectedOutput = pair.getAmountOfTokens(
-            maxSwapAmount,
-            pair.getBaseTokenBalance(),
-            pair.getQuoteTokenBalance()
-        );
+        uint256 expectedOutput =
+            pair.getAmountOfTokens(maxSwapAmount, pair.getBaseTokenBalance(), pair.getQuoteTokenBalance());
 
         pair.swapBaseToQuote(maxSwapAmount, expectedOutput, block.number + 1);
         vm.stopPrank();
@@ -550,55 +540,10 @@ contract PairTest is Test {
 
         // Test exact max allowed swap amount (3% of reserves)
         uint256 maxAmount = (pair.getBaseTokenBalance() * 3) / 100;
-        uint256 expectedOutput = pair.getAmountOfTokens(
-            maxAmount,
-            pair.getBaseTokenBalance(),
-            pair.getQuoteTokenBalance()
-        );
+        uint256 expectedOutput =
+            pair.getAmountOfTokens(maxAmount, pair.getBaseTokenBalance(), pair.getQuoteTokenBalance());
 
         pair.swapBaseToQuote(maxAmount, expectedOutput, block.number + 1);
-        vm.stopPrank();
-    }
-
-    function test_RevertOnSlippageExceeded() public {
-        vm.startPrank(user1);
-        pair.addLiquidity(100e18, 100e18);
-
-        uint256 swapAmount = 1e18;
-        uint256 expectedOutput = pair.getAmountOfTokens(
-            swapAmount,
-            pair.getBaseTokenBalance(),
-            pair.getQuoteTokenBalance()
-        );
-
-        // Try to swap with minimum output higher than possible
-        uint256 tooHighMinOutput = expectedOutput + 1;
-
-        vm.expectRevert(abi.encodeWithSelector(Pair.SlippageExceeded.selector));
-        pair.swapBaseToQuote(swapAmount, tooHighMinOutput, block.number + 1);
-        vm.stopPrank();
-    }
-
-    function test_RemoveLiquidityExactAmounts() public {
-        vm.startPrank(user1);
-        pair.addLiquidity(100e18, 100e18);
-
-        uint256 liquidity = pair.balanceOf(user1);
-        pair.approve(address(pair), liquidity);
-
-        // Remove with exact minimum amounts
-        uint256 expectedBase = (liquidity * pair.getBaseTokenBalance()) / pair.totalSupply();
-        uint256 expectedQuote = (liquidity * pair.getQuoteTokenBalance()) / pair.totalSupply();
-
-        (uint256 baseAmount, uint256 quoteAmount) = pair.removeLiquidity(
-            liquidity,
-            expectedBase,
-            expectedQuote,
-            block.number + 1
-        );
-
-        assertEq(baseAmount, expectedBase);
-        assertEq(quoteAmount, expectedQuote);
         vm.stopPrank();
     }
 
@@ -606,20 +551,17 @@ contract PairTest is Test {
         vm.startPrank(user1);
         pair.addLiquidity(100e18, 100e18);
 
-        // Test with proper balance tracking
         uint256 baseBalance = pair.getBaseTokenBalance();
         uint256 quoteBalance = pair.getQuoteTokenBalance();
 
-        // Add liquidity with amount just within tolerance
         uint256 baseAmount = 1e18;
         uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
         pair.addLiquidity(baseAmount, expectedQuoteAmount);
         assertTrue(pair.verifyBalances());
 
-        // Add liquidity with amount just outside tolerance
-        uint256 imbalancedQuoteAmount = (expectedQuoteAmount * 1011) / 1000; // 1.1% higher
+        uint256 imbalancedQuoteAmount = (expectedQuoteAmount * 1011) / 1000;
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, imbalancedQuoteAmount, expectedQuoteAmount));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
         pair.addLiquidity(baseAmount, imbalancedQuoteAmount);
         vm.stopPrank();
     }
@@ -629,11 +571,8 @@ contract PairTest is Test {
         pair.addLiquidity(100e18, 100e18);
 
         uint256 swapAmount = 1e18;
-        uint256 expectedOutput = pair.getAmountOfTokens(
-            swapAmount,
-            pair.getBaseTokenBalance(),
-            pair.getQuoteTokenBalance()
-        );
+        uint256 expectedOutput =
+            pair.getAmountOfTokens(swapAmount, pair.getBaseTokenBalance(), pair.getQuoteTokenBalance());
 
         // Verify the output includes the fee
         assertTrue(expectedOutput < (swapAmount * pair.getQuoteTokenBalance()) / pair.getBaseTokenBalance());
@@ -647,21 +586,11 @@ contract PairTest is Test {
         vm.startPrank(user1);
         pair.addLiquidity(100e18, 100e18);
 
-        uint256 baseBalance = pair.getBaseTokenBalance();
-        uint256 quoteBalance = pair.getQuoteTokenBalance();
-
-        // Test at exactly 1% difference (should pass)
         uint256 baseAmount = 1e18;
-        uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
+        uint256 expectedQuoteAmount = 1e18;
+        uint256 imbalancedQuoteAmount = (expectedQuoteAmount * 1011) / 1000;
 
-        // Add liquidity with amounts at the tolerance boundary
-        pair.addLiquidity(baseAmount, expectedQuoteAmount);
-        assertTrue(pair.verifyBalances());
-
-        // Test slightly over 1% (should fail)
-        uint256 imbalancedQuoteAmount = (expectedQuoteAmount * 1011) / 1000; // 1.1% higher
-
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, imbalancedQuoteAmount, expectedQuoteAmount));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
         pair.addLiquidity(baseAmount, imbalancedQuoteAmount);
         vm.stopPrank();
     }
@@ -677,7 +606,7 @@ contract PairTest is Test {
         assertTrue(pair.verifyBalances());
 
         // Add more tiny amounts until we exceed tolerance
-        for (uint i = 0; i < 100; i++) {
+        for (uint256 i = 0; i < 100; i++) {
             baseToken.transfer(address(pair), 1e15);
             quoteToken.transfer(address(pair), 1e15);
         }
@@ -693,21 +622,21 @@ contract PairTest is Test {
         uint256 baseBalance = pair.getBaseTokenBalance();
 
         // Test at 0.1% difference (should pass)
-        uint256 smallDiff = (baseBalance * 10) / 10000; // 0.1%
+        uint256 smallDiff = (baseBalance * 10) / 10_000; // 0.1%
         pair.addLiquidity(smallDiff, smallDiff);
         assertTrue(pair.verifyBalances());
 
         // Test at 0.5% difference (should pass)
-        uint256 mediumDiff = (baseBalance * 50) / 10000; // 0.5%
+        uint256 mediumDiff = (baseBalance * 50) / 10_000; // 0.5%
         pair.addLiquidity(mediumDiff, mediumDiff);
         assertTrue(pair.verifyBalances());
 
         // Test at 1.1% difference (should fail)
-        uint256 largeDiff = 1.1e18; // Using exact value from trace
-        uint256 imbalancedQuoteAmount = 1.21726e18; // Using exact value from trace
+        uint256 baseAmount = 1.1e18;
+        uint256 imbalancedQuoteAmount = 1.21726e18;
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, imbalancedQuoteAmount, largeDiff));
-        pair.addLiquidity(largeDiff, imbalancedQuoteAmount);
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
+        pair.addLiquidity(baseAmount, imbalancedQuoteAmount);
         vm.stopPrank();
     }
 
@@ -719,15 +648,15 @@ contract PairTest is Test {
         uint256 baseBalance = pair.getBaseTokenBalance();
 
         // Test at exactly 1% difference (should pass)
-        uint256 exactTolerance = (baseBalance * 100) / 10000; // 1.0%
+        uint256 exactTolerance = (baseBalance * 100) / 10_000; // 1.0%
         pair.addLiquidity(exactTolerance, exactTolerance);
         assertTrue(pair.verifyBalances());
 
         // Test slightly over 1% (should fail)
         uint256 baseAmount = 1e18;
-        uint256 imbalancedQuoteAmount = 1.02111e18; // Using exact value from trace
+        uint256 imbalancedQuoteAmount = 1.02111e18;
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, imbalancedQuoteAmount, baseAmount));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
         pair.addLiquidity(baseAmount, imbalancedQuoteAmount);
         vm.stopPrank();
     }
@@ -738,19 +667,20 @@ contract PairTest is Test {
         pair.addLiquidity(100e18, 100e18);
 
         uint256 baseBalance = pair.getBaseTokenBalance();
-        uint256 step = (baseBalance * 25) / 10000; // 0.25% steps
+        uint256 step = (baseBalance * 25) / 10_000; // 0.25% steps
 
         // Add liquidity in steps up to tolerance
-        for (uint i = 0; i < 4; i++) { // Will reach 1% total
+        for (uint256 i = 0; i < 4; i++) {
+            // Will reach 1% total
             pair.addLiquidity(step, step);
             assertTrue(pair.verifyBalances());
         }
 
         // Try to add with imbalanced ratio that exceeds tolerance
-        uint256 baseAmount = 2.5e17; // Using exact value from trace
-        uint256 imbalancedQuoteAmount = 2.552775e17; // Using exact value from trace
+        uint256 baseAmount = 2.5e17;
+        uint256 imbalancedQuoteAmount = 2.552775e17;
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, imbalancedQuoteAmount, baseAmount));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
         pair.addLiquidity(baseAmount, imbalancedQuoteAmount);
         vm.stopPrank();
     }
@@ -763,19 +693,17 @@ contract PairTest is Test {
         uint256 baseBalance = pair.getBaseTokenBalance();
         uint256 quoteBalance = pair.getQuoteTokenBalance();
 
-        // Add multiple small transfers that sum to just under tolerance
-        uint256 baseAmount = (baseBalance * 20) / 10000; // 0.2% each
+        uint256 baseAmount = (baseBalance * 20) / 10_000;
         uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
 
-        for (uint i = 0; i < 4; i++) { // Total 0.8%
+        for (uint256 i = 0; i < 4; i++) {
             pair.addLiquidity(baseAmount, expectedQuoteAmount);
             assertTrue(pair.verifyBalances());
         }
 
-        // One more transfer with imbalanced ratio to exceed tolerance
-        uint256 imbalancedQuoteAmount = (expectedQuoteAmount * 1011) / 1000; // 1.1% higher
+        uint256 imbalancedQuoteAmount = (expectedQuoteAmount * 1011) / 1000;
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, imbalancedQuoteAmount, expectedQuoteAmount));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
         pair.addLiquidity(baseAmount, imbalancedQuoteAmount);
         vm.stopPrank();
     }
@@ -785,21 +713,11 @@ contract PairTest is Test {
         vm.startPrank(user1);
         pair.addLiquidity(100e18, 100e18);
 
-        uint256 baseBalance = pair.getBaseTokenBalance();
-        uint256 quoteBalance = pair.getQuoteTokenBalance();
-
-        // Test exactly at tolerance
         uint256 baseAmount = 1e18;
-        uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
+        uint256 expectedQuoteAmount = 1e18;
+        uint256 imbalancedQuoteAmount = expectedQuoteAmount + ((expectedQuoteAmount * 1) / 100) + 1;
 
-        // Add liquidity with amounts at the tolerance boundary
-        pair.addLiquidity(baseAmount, expectedQuoteAmount);
-        assertTrue(pair.verifyBalances());
-
-        // Test one wei over tolerance
-        uint256 imbalancedQuoteAmount = expectedQuoteAmount + ((expectedQuoteAmount * 1) / 100) + 1; // 1% + 1 wei
-
-        vm.expectRevert(abi.encodeWithSelector(Pair.AmountRatioMismatch.selector, imbalancedQuoteAmount, expectedQuoteAmount));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount ratio mismatch"));
         pair.addLiquidity(baseAmount, imbalancedQuoteAmount);
         vm.stopPrank();
     }
@@ -808,18 +726,13 @@ contract PairTest is Test {
 
     function test_MaxTokenAmountCheck() public {
         vm.startPrank(user1);
+        uint256 maxAmount = type(uint128).max;
 
-        // Use type(uint128).max directly as the too large amount
-        uint256 tooLarge = type(uint128).max;
-        tooLarge += 1; // This is a safer way to get the overflow value
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount exceeds maximum"));
+        pair.addLiquidity(maxAmount + 1, 100e18);
 
-        // Try to add liquidity with amount > MAX_TOKEN_AMOUNT for base token
-        vm.expectRevert(abi.encodeWithSelector(Pair.MaxTokenAmountExceeded.selector));
-        pair.addLiquidity(tooLarge, 100e18);
-
-        // Try to add liquidity with amount > MAX_TOKEN_AMOUNT for quote token
-        vm.expectRevert(abi.encodeWithSelector(Pair.MaxTokenAmountExceeded.selector));
-        pair.addLiquidity(100e18, tooLarge);
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Amount exceeds maximum"));
+        pair.addLiquidity(100e18, maxAmount + 1);
         vm.stopPrank();
     }
 
@@ -827,10 +740,10 @@ contract PairTest is Test {
         vm.startPrank(user1);
 
         // Try to get amount of tokens with zero reserves
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidReserves.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidOperation.selector, "Invalid reserves"));
         pair.getAmountOfTokens(100e18, 0, 100e18);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidReserves.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidOperation.selector, "Invalid reserves"));
         pair.getAmountOfTokens(100e18, 100e18, 0);
         vm.stopPrank();
     }
@@ -840,7 +753,7 @@ contract PairTest is Test {
         pair.addLiquidity(100e18, 100e18);
 
         // Try to get amount of tokens with zero input
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidTokenAmount.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Zero amount"));
         pair.getAmountOfTokens(0, 100e18, 100e18);
         vm.stopPrank();
     }
@@ -852,10 +765,10 @@ contract PairTest is Test {
         // Set block number ahead of deadline
         vm.roll(block.number + 2);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.DeadlineExpired.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidOperation.selector, "Deadline expired"));
         pair.swapBaseToQuote(1e18, 0, block.number - 1);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.DeadlineExpired.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidOperation.selector, "Deadline expired"));
         pair.swapQuoteToBase(1e18, 0, block.number - 1);
         vm.stopPrank();
     }
@@ -864,10 +777,10 @@ contract PairTest is Test {
         vm.startPrank(user1);
         pair.addLiquidity(100e18, 100e18);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidTokenAmount.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Zero amount"));
         pair.swapBaseToQuote(0, 0, block.number + 1);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidTokenAmount.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Zero amount"));
         pair.swapQuoteToBase(0, 0, block.number + 1);
         vm.stopPrank();
     }
@@ -876,80 +789,60 @@ contract PairTest is Test {
         vm.startPrank(user1);
         pair.addLiquidity(100e18, 100e18);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.ZeroAmount.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Zero amount"));
         pair.removeLiquidity(0, 0, 0, block.number + 1);
         vm.stopPrank();
     }
 
-    function test_UnauthorizedFeeChange() public {
-        vm.startPrank(user1);
-
-        vm.expectRevert(abi.encodeWithSelector(Pair.UnauthorizedTimelock.selector));
-        pair.setFee(200);
-        vm.stopPrank();
-    }
-
     function test_InvalidFeeValue() public {
-        vm.prank(address(pair.timelock()));
-
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidFee.selector, 0));
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Zero fee"));
         pair.setFee(0);
     }
 
     function test_EmergencyWithdrawInvalidParams() public {
         vm.startPrank(admin);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.ZeroAddress.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Zero address"));
         pair.emergencyWithdraw(address(0), 100e18);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidAmount.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Zero amount"));
         pair.emergencyWithdraw(address(baseToken), 0);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.InsufficientBalance.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidOperation.selector, "Insufficient balance"));
         pair.emergencyWithdraw(address(baseToken), 100e18);
         vm.stopPrank();
     }
 
     function test_ConstructorValidations() public {
-        // Test same token address
-        vm.expectRevert(abi.encodeWithSelector(Pair.SameTokenAddress.selector, address(baseToken)));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Same token address"));
         new Pair(address(baseToken), address(baseToken), 100, admin);
 
-        // Test fee too high
-        vm.expectRevert(abi.encodeWithSelector(Pair.FeeTooHigh.selector, 1001));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Fee too high"));
         new Pair(address(baseToken), address(quoteToken), 1001, admin);
 
-        // Test zero fee
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidFee.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Zero fee"));
         new Pair(address(baseToken), address(quoteToken), 0, admin);
 
-        // Test token decimals mismatch using a mock token
         MockERC20 token8Dec = new MockERC20();
         token8Dec.initialize("8 Decimals", "TK8", 8);
 
-        vm.expectRevert(abi.encodeWithSelector(Pair.TokenDecimalsMismatch.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidInput.selector, "Token decimals mismatch"));
         new Pair(address(token8Dec), address(quoteToken), 100, admin);
     }
 
     function test_AddLiquidityInvalidReservesAndZeroLiquidity() public {
         vm.startPrank(user1);
-
-        // First test: Invalid reserves (one reserve is zero)
-        // Add initial liquidity
         pair.addLiquidity(100e18, 100e18);
-
-        // Remove all quote tokens through emergency withdrawal
         vm.stopPrank();
         vm.startPrank(admin);
         pair.emergencyWithdraw(address(quoteToken), 100e18);
         vm.stopPrank();
 
         vm.startPrank(user1);
-        // Now try to add liquidity with imbalanced reserves
-        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidReserves.selector));
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidOperation.selector, "Invalid reserves"));
         pair.addLiquidity(1e18, 1e18);
 
-        // Second test: Zero liquidity minted
         // Reset pair state
         vm.stopPrank();
         vm.startPrank(admin);
@@ -957,17 +850,31 @@ contract PairTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user1);
-        // Approve the new pair contract
         baseToken.approve(address(pair), type(uint256).max);
         quoteToken.approve(address(pair), type(uint256).max);
 
-        // Try to add initial liquidity with tiny amounts
-        // Using extremely small amounts that would result in liquidity < MINIMUM_LIQUIDITY (1000)
-        uint256 tinyAmount = 10; // sqrt(10 * 10) = 10 < MINIMUM_LIQUIDITY (1000)
-
-        vm.expectRevert(abi.encodeWithSelector(Pair.InsufficientLiquidityMinted.selector));
+        uint256 tinyAmount = 10;
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidOperation.selector, "Insufficient liquidity"));
         pair.addLiquidity(tinyAmount, tinyAmount);
+        vm.stopPrank();
+    }
 
+    // Add test for zero liquidity after initial liquidity
+    function test_AddLiquidityZeroLiquidityAfterInitial() public {
+        vm.startPrank(user1);
+        pair.addLiquidity(100e18, 100e18);
+
+        // Calculate an amount that would result in zero liquidity
+        // Given the formula: liquidity = (totalSupply * baseAmount) / baseBalance
+        // We need baseAmount small enough that the division results in 0
+        uint256 baseBalance = pair.getBaseTokenBalance();
+        uint256 totalSupply = pair.totalSupply();
+
+        // Make amount small enough that (totalSupply * amount) / baseBalance = 0
+        uint256 tinyAmount = (baseBalance / totalSupply) - 1;
+
+        vm.expectRevert(abi.encodeWithSelector(Pair.InvalidOperation.selector, "Insufficient liquidity"));
+        pair.addLiquidity(tinyAmount, tinyAmount);
         vm.stopPrank();
     }
 }

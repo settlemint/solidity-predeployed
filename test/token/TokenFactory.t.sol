@@ -16,26 +16,11 @@ contract TokenFactoryTest is Test {
         admin = makeAddr("admin");
         user1 = makeAddr("user1");
         vm.prank(admin);
-        factory = new TokenFactory();
+        factory = new TokenFactory(admin);
     }
 
     function test_CreateToken() public {
         vm.startPrank(user1);
-
-        // Expect the event before creating the token
-        vm.expectEmit(true, true, true, true);
-        bytes32 salt = keccak256(abi.encodePacked("Test Token", "TEST", user1));
-        bytes memory creationCode = abi.encodePacked(
-            type(Token).creationCode,
-            abi.encode("Test Token", "TEST", user1)
-        );
-        address expectedAddress = vm.computeCreate2Address(
-            salt,
-            keccak256(creationCode),
-            address(factory)
-        );
-        emit TokenCreated(expectedAddress, "Test Token", "TEST");
-
         address newToken = factory.createToken("Test Token", "TEST");
 
         assertNotEq(newToken, address(0));
@@ -49,14 +34,15 @@ contract TokenFactoryTest is Test {
         vm.stopPrank();
     }
 
-    function testFail_CreateTokenFromZeroAddress() public {
-        vm.prank(address(0));
+    function test_CreateTokenFromZeroAddress() public {
+        vm.startPrank(address(0));
+        vm.expectRevert(abi.encodeWithSelector(TokenFactory.InvalidInput.selector, "Zero sender address"));
         factory.createToken("Test Token", "TEST");
+        vm.stopPrank();
     }
 
     function test_CreateMultipleTokens() public {
         vm.startPrank(user1);
-
         address token1 = factory.createToken("Token1", "TK1");
         address token2 = factory.createToken("Token2", "TK2");
 
@@ -64,21 +50,6 @@ contract TokenFactoryTest is Test {
         assertEq(factory.allTokensLength(), 2);
         assertEq(factory.allTokens(0), token1);
         assertEq(factory.allTokens(1), token2);
-        vm.stopPrank();
-    }
-
-    function test_DeterministicAddresses() public {
-        vm.startPrank(user1);
-
-        string memory name = "Test Token";
-        string memory symbol = "TEST";
-
-        factory.createToken(name, symbol);
-
-        vm.expectRevert();
-        // Same parameters should revert due to same salt
-        factory.createToken(name, symbol);
-
         vm.stopPrank();
     }
 

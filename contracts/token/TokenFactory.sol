@@ -2,13 +2,19 @@
 pragma solidity ^0.8.24;
 
 import { Token } from "./Token.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /// @title Factory
 /// @dev A factory contract for creating  tokens
 /// @custom:security-contact security@settlemint.com
-contract TokenFactory {
-    /// @notice Thrown when zero address provided
-    error ZeroAddress();
+contract TokenFactory is AccessControl {
+    /// @notice Role identifier for administrators
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+
+    /// @notice Thrown when input validation fails
+    error InvalidInput(string message);
+    /// @notice Thrown when operation validation fails
+    error InvalidOperation(string message);
 
     /// @dev Emitted when a new token is created
     /// @param tokenAddress The address of the newly created token
@@ -19,22 +25,22 @@ contract TokenFactory {
     /// @notice Array of all created tokens
     address[] public allTokens;
 
+    constructor(address admin) {
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(ADMIN_ROLE, admin);
+    }
+
     /// @notice Creates a new  token
     /// @param name_ The name of the new token
     /// @param symbol_ The symbol of the new token
     /// @return token The address of the newly created token
-    function createToken(
-        string calldata name_,
-        string calldata symbol_
-    ) external returns (address token) {
-        if (msg.sender == address(0)) revert ZeroAddress();
+    function createToken(string calldata name_, string calldata symbol_) external returns (address token) {
+        if (msg.sender == address(0)) {
+            revert InvalidInput("Zero sender address");
+        }
 
         bytes32 salt = keccak256(abi.encodePacked(name_, symbol_, msg.sender));
-        Token newToken = new Token{salt: salt}(
-            name_,
-            symbol_,
-            msg.sender
-        );
+        Token newToken = new Token{ salt: salt }(name_, symbol_, msg.sender);
 
         token = address(newToken);
         allTokens.push(token);

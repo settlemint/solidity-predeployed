@@ -45,10 +45,11 @@ contract SaleTest is Test {
         assertEq(address(sale.paymentToken()), address(paymentToken));
         assertEq(sale.price(), 1e18);
         assertTrue(sale.hasRole(sale.ADMIN_ROLE(), admin));
+        assertTrue(sale.hasRole(sale.DEFAULT_ADMIN_ROLE(), admin));
     }
 
     function test_SetPrice() public {
-        vm.startPrank(address(sale.timelock()));
+        vm.startPrank(admin);
 
         vm.expectEmit(true, true, true, true);
         emit PriceUpdated(1e18, 2e18);
@@ -59,7 +60,7 @@ contract SaleTest is Test {
     }
 
     function testFail_SetPriceUnauthorized() public {
-        vm.prank(admin);
+        vm.prank(user1);
         sale.setPrice(2e18);
     }
 
@@ -124,57 +125,57 @@ contract SaleTest is Test {
     }
 
     function test_RevertWhen_AdminIsZeroAddress() public {
-        vm.expectRevert(Sale.ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero admin address"));
         new Sale(address(saleToken), address(paymentToken), 1e18, address(0));
     }
 
     function test_RevertWhen_SaleTokenIsZeroAddress() public {
-        vm.expectRevert(Sale.ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero token address"));
         new Sale(address(0), address(paymentToken), 1e18, admin);
     }
 
     function test_RevertWhen_PaymentTokenIsZeroAddress() public {
-        vm.expectRevert(Sale.ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero token address"));
         new Sale(address(saleToken), address(0), 1e18, admin);
     }
 
     function test_RevertWhen_SameTokenAddresses() public {
-        vm.expectRevert(abi.encodeWithSelector(Sale.SameTokenAddress.selector, address(saleToken)));
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Same token address"));
         new Sale(address(saleToken), address(saleToken), 1e18, admin);
     }
 
     function test_RevertWhen_InitialPriceIsZero() public {
-        vm.expectRevert(Sale.InvalidPrice.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero price"));
         new Sale(address(saleToken), address(paymentToken), 0, admin);
     }
 
     function test_RevertWhen_SetPriceToZero() public {
-        vm.prank(address(sale.timelock()));
-        vm.expectRevert(Sale.InvalidPrice.selector);
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero price"));
         sale.setPrice(0);
     }
 
     function test_RevertWhen_EmergencyWithdrawZeroAddress() public {
         vm.prank(admin);
-        vm.expectRevert(Sale.ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero token address"));
         sale.emergencyWithdraw(address(0), 100e18);
     }
 
     function test_RevertWhen_EmergencyWithdrawZeroAmount() public {
         vm.prank(admin);
-        vm.expectRevert(Sale.InvalidAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero amount"));
         sale.emergencyWithdraw(address(paymentToken), 0);
     }
 
     function test_RevertWhen_EmergencyWithdrawInsufficientBalance() public {
         vm.prank(admin);
-        vm.expectRevert(Sale.InsufficientBalance.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidOperation.selector, "Insufficient balance"));
         sale.emergencyWithdraw(address(paymentToken), 1000e18);
     }
 
     function test_RevertWhen_DepositZeroAmount() public {
         vm.prank(admin);
-        vm.expectRevert(Sale.InvalidDepositAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero deposit amount"));
         sale.depositSaleTokens(0);
     }
 
@@ -194,14 +195,14 @@ contract SaleTest is Test {
         // Approve large amount of payment tokens
         paymentToken.approve(address(sale), largeAmount);
 
-        vm.expectRevert(Sale.AmountTooLarge.selector);
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Amount too large"));
         sale.buyTokens(largeAmount + 1);
         vm.stopPrank();
     }
 
     function test_RevertWhen_BuyZeroTokens() public {
         vm.prank(user1);
-        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidTokenAmount.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero amount"));
         sale.buyTokens(0);
     }
 }

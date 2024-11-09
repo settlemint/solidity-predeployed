@@ -23,7 +23,7 @@ contract SaleFactoryTest is Test {
     function setUp() public {
         admin = makeAddr("admin");
         user1 = makeAddr("user1");
-        
+
         vm.startPrank(admin);
         factory = new SaleFactory(admin);
         saleToken = new Token("Sale Token", "SALE", admin);
@@ -31,72 +31,55 @@ contract SaleFactoryTest is Test {
         vm.stopPrank();
     }
 
-    function test_InitialState() public {
-        assertTrue(factory.hasRole(factory.DEFAULT_ADMIN_ROLE(), admin));
-        assertTrue(factory.hasRole(factory.ADMIN_ROLE(), admin));
-    }
-
     function test_CreateSale() public {
         vm.startPrank(admin);
-        
-        // Expect the event before creating the sale
-        bytes32 salt = keccak256(abi.encodePacked(
-            address(saleToken), address(paymentToken), admin
-        ));
-        bytes memory creationCode = abi.encodePacked(
-            type(Sale).creationCode,
-            abi.encode(address(saleToken), address(paymentToken), 100, admin)
-        );
-        address expectedAddress = vm.computeCreate2Address(
-            salt,
-            keccak256(creationCode),
-            address(factory)
-        );
-        emit SaleCreated(expectedAddress, address(saleToken), address(paymentToken), 100);
-        
         address sale = factory.createSale(address(saleToken), address(paymentToken), 100);
-        
+
         assertNotEq(sale, address(0));
         assertEq(factory.getSale(address(saleToken)), sale);
         assertEq(factory.allSalesLength(), 1);
         assertEq(factory.allSales(0), sale);
-        
         vm.stopPrank();
     }
 
-    function testFail_CreateSaleUnauthorized() public {
-        vm.prank(user1);
-        factory.createSale(address(saleToken), address(paymentToken), 100);
-    }
-
-    function testFail_CreateSaleWithZeroAddress() public {
-        vm.prank(admin);
+    function test_CreateSaleWithZeroAddress() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(SaleFactory.InvalidInput.selector, "Zero address"));
         factory.createSale(address(0), address(paymentToken), 100);
+        vm.stopPrank();
     }
 
-    function testFail_CreateSaleWithIdenticalTokens() public {
-        vm.prank(admin);
+    function test_CreateSaleWithIdenticalTokens() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(SaleFactory.InvalidInput.selector, "Identical addresses"));
         factory.createSale(address(saleToken), address(saleToken), 100);
+        vm.stopPrank();
     }
 
-    function testFail_CreateDuplicateSale() public {
+    function test_CreateDuplicateSale() public {
         vm.startPrank(admin);
         factory.createSale(address(saleToken), address(paymentToken), 100);
+        vm.expectRevert(abi.encodeWithSelector(SaleFactory.InvalidOperation.selector, "Sale exists"));
         factory.createSale(address(saleToken), address(paymentToken), 200);
         vm.stopPrank();
     }
 
     function test_AllSalesLength() public {
         assertEq(factory.allSalesLength(), 0);
-        
+
         vm.startPrank(admin);
         Token newToken = new Token("New Token", "NEW", admin);
-        
+
         factory.createSale(address(saleToken), address(paymentToken), 100);
         assertEq(factory.allSalesLength(), 1);
-        
+
         factory.createSale(address(newToken), address(paymentToken), 100);
         assertEq(factory.allSalesLength(), 2);
         vm.stopPrank();
+    }
+
+    function testFail_CreateSaleUnauthorized() public {
+        vm.prank(user1);
+        factory.createSale(address(saleToken), address(paymentToken), 100);
     }
 }

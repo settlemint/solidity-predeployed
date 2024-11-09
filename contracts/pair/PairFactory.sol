@@ -2,31 +2,25 @@
 pragma solidity ^0.8.24;
 
 import { Pair } from "./Pair.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /// @title DexFactory
 /// @notice Factory contract for creating and managing Dex pairs
 /// @dev Creates and tracks ERC20-ERC20 trading pairs
-contract DexFactory {
-    /// @notice Thrown when an invalid token address is provided
-    error InvalidToken();
-    /// @notice Thrown when attempting to create a pair that already exists
-    error PairExists();
-    /// @notice Thrown when same address is used for both tokens
-    error IdenticalAddresses();
-    /// @notice Thrown when zero address is provided
-    error ZeroAddress();
+contract PairFactory is AccessControl {
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+
+    /// @notice Thrown when input validation fails
+    error InvalidInput(string message);
+    /// @notice Thrown when operation validation fails
+    error InvalidOperation(string message);
 
     /// @notice Emitted when a new trading pair is created
     /// @param baseToken Address of the base token
     /// @param quoteToken Address of the quote token
     /// @param pair Address of the created pair contract
     /// @param pairCount Total number of pairs after creation
-    event PairCreated(
-        address indexed baseToken,
-        address indexed quoteToken,
-        address pair,
-        uint256 pairCount
-    );
+    event PairCreated(address indexed baseToken, address indexed quoteToken, address pair, uint256 pairCount);
 
     /// @notice Maps token addresses to their trading pair contracts
     /// @dev Maps token0 => token1 => pair address
@@ -34,6 +28,11 @@ contract DexFactory {
 
     /// @notice Array containing addresses of all created pairs
     address[] public allPairs;
+
+    constructor(address admin) {
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(ADMIN_ROLE, admin);
+    }
 
     /// @notice Returns the total number of pairs created
     /// @return Number of pairs in existence
@@ -45,26 +44,22 @@ contract DexFactory {
     /// @param baseToken Address of the base token
     /// @param quoteToken Address of the quote token
     /// @return pair Address of the newly created pair
-    function createPair(
-        address baseToken,
-        address quoteToken
-    ) external returns (address pair) {
-        if (baseToken == quoteToken) revert IdenticalAddresses();
-        if (baseToken == address(0) || quoteToken == address(0)) revert ZeroAddress();
+    function createPair(address baseToken, address quoteToken) external onlyRole(ADMIN_ROLE) returns (address pair) {
+        if (baseToken == quoteToken) {
+            revert InvalidInput("Identical addresses");
+        }
+        if (baseToken == address(0) || quoteToken == address(0)) {
+            revert InvalidInput("Zero address");
+        }
 
-        (address token0, address token1) = baseToken < quoteToken
-            ? (baseToken, quoteToken)
-            : (quoteToken, baseToken);
+        (address token0, address token1) = baseToken < quoteToken ? (baseToken, quoteToken) : (quoteToken, baseToken);
 
-        if (getPair[token0][token1] != address(0)) revert PairExists();
+        if (getPair[token0][token1] != address(0)) {
+            revert InvalidOperation("Pair exists");
+        }
 
         bytes32 salt = keccak256(abi.encodePacked(token0, token1));
-        Pair newPair = new Pair{salt: salt}(
-            token0,
-            token1,
-            100,
-            msg.sender
-        );
+        Pair newPair = new Pair{ salt: salt }(token0, token1, 100, msg.sender);
 
         pair = address(newPair);
         getPair[token0][token1] = pair;
