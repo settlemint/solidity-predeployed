@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
-import {Token} from "../../contracts/token/Token.sol";
+import { Test } from "forge-std/Test.sol";
+import { Token } from "../../contracts/token/Token.sol";
 
 contract TokenTest is Test {
     Token public token;
@@ -168,7 +168,9 @@ contract TokenTest is Test {
                     token.DOMAIN_SEPARATOR(),
                     keccak256(
                         abi.encode(
-                            keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
+                            keccak256(
+                                "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+                            ),
                             owner,
                             user1,
                             500,
@@ -219,5 +221,76 @@ contract TokenTest is Test {
     function test_ConstructorZeroAddress() public {
         vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero admin address"));
         new Token("Test Token", "TEST", address(0));
+    }
+}
+
+contract TokenFuzzTests is Test {
+    Token public token;
+    address public admin;
+    address public user;
+
+    function setUp() public {
+        admin = makeAddr("admin");
+        user = makeAddr("user");
+
+        vm.startPrank(admin);
+        token = new Token("Test Token", "TEST", admin);
+        vm.stopPrank();
+    }
+
+    function testFuzz_Mint(uint256 amount) public {
+        // Bound amount to reasonable range
+        amount = bound(amount, 1000, type(uint128).max);
+
+        vm.startPrank(admin);
+        token.mint(user, amount);
+        assertEq(token.balanceOf(user), amount);
+        vm.stopPrank();
+    }
+
+    function testFuzz_Burn(uint256 mintAmount, uint256 burnAmount) public {
+        // Bound amounts
+        mintAmount = bound(mintAmount, 1000, type(uint128).max);
+
+        vm.startPrank(admin);
+        token.mint(user, mintAmount);
+
+        burnAmount = bound(burnAmount, 1, mintAmount);
+        token.burn(user, burnAmount);
+
+        assertEq(token.balanceOf(user), mintAmount - burnAmount);
+        vm.stopPrank();
+    }
+
+    function testFuzz_Transfer(uint256 amount) public {
+        // Bound amount to reasonable range
+        amount = bound(amount, 1000, type(uint128).max);
+
+        vm.startPrank(admin);
+        token.mint(user, amount);
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        uint256 halfAmount = amount / 2;
+        token.transfer(address(this), halfAmount);
+
+        // Fix assertions to account for integer division
+        assertEq(token.balanceOf(user), amount - halfAmount); // Changed from amount/2
+        assertEq(token.balanceOf(address(this)), halfAmount);
+        vm.stopPrank();
+    }
+
+    function testFuzz_EmergencyWithdraw(uint256 amount) public {
+        // Create test token and mint some to the Token contract
+        Token testToken = new Token("Test Token 2", "TEST2", admin);
+
+        // Bound amount
+        amount = bound(amount, 1000, type(uint128).max);
+
+        vm.startPrank(admin);
+        testToken.mint(address(token), amount);
+        token.emergencyWithdraw(address(testToken), amount);
+        assertEq(testToken.balanceOf(admin), amount);
+        vm.stopPrank();
     }
 }

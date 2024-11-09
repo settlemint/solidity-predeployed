@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
-import {Sale} from "../../contracts/sale/Sale.sol";
-import {Token} from "../../contracts/token/Token.sol";
+import { Test } from "forge-std/Test.sol";
+import { Sale } from "../../contracts/sale/Sale.sol";
+import { Token } from "../../contracts/token/Token.sol";
 
 contract SaleTest is Test {
     Sale public sale;
@@ -204,5 +204,95 @@ contract SaleTest is Test {
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero amount"));
         sale.buyTokens(0);
+    }
+}
+
+contract SaleFuzzTests is Test {
+    Sale public sale;
+    Token public saleToken;
+    Token public paymentToken;
+    address public admin;
+    address public user;
+
+    function setUp() public {
+        admin = makeAddr("admin");
+        user = makeAddr("user");
+
+        vm.startPrank(admin);
+        saleToken = new Token("Sale Token", "SALE", admin);
+        paymentToken = new Token("Payment Token", "PAY", admin);
+        sale = new Sale(address(saleToken), address(paymentToken), 1e18, admin);
+
+        // Mint tokens for testing
+        saleToken.mint(admin, type(uint128).max);
+        paymentToken.mint(user, type(uint128).max);
+
+        // Approve sale contract
+        saleToken.approve(address(sale), type(uint128).max);
+        vm.stopPrank();
+
+        vm.prank(user);
+        paymentToken.approve(address(sale), type(uint128).max);
+    }
+
+    function testFuzz_BuyTokens(uint256 amount) public {
+        // Bound amount to reasonable range
+        amount = bound(amount, 1000, type(uint128).max);
+
+        vm.startPrank(admin);
+        sale.depositSaleTokens(amount);
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        sale.buyTokens(amount);
+
+        assertEq(saleToken.balanceOf(user), amount);
+        assertEq(paymentToken.balanceOf(address(sale)), (amount * sale.price()) / 1e18);
+        vm.stopPrank();
+    }
+
+    function testFuzz_SetPrice(uint256 newPrice) public {
+        // Bound price to reasonable range
+        newPrice = bound(newPrice, 1, type(uint128).max);
+
+        vm.startPrank(admin);
+        sale.setPrice(newPrice);
+        assertEq(sale.price(), newPrice);
+        vm.stopPrank();
+    }
+
+    function testFuzz_EmergencyWithdraw(uint256 depositAmount, uint256 withdrawAmount) public {
+        // Bound amounts
+        depositAmount = bound(depositAmount, 1000, type(uint128).max);
+
+        vm.startPrank(admin);
+        // Clear any previous balance
+        uint256 initialBalance = saleToken.balanceOf(admin);
+        if (initialBalance > 0) {
+            saleToken.burn(admin, initialBalance);
+        }
+
+        // Mint exact amount needed for test
+        saleToken.mint(admin, depositAmount);
+        sale.depositSaleTokens(depositAmount);
+
+        withdrawAmount = bound(withdrawAmount, 1, depositAmount);
+        uint256 balanceBeforeWithdraw = saleToken.balanceOf(admin);
+
+        sale.emergencyWithdraw(address(saleToken), withdrawAmount);
+
+        // Check that admin's balance increased by exactly withdrawAmount
+        assertEq(saleToken.balanceOf(admin), balanceBeforeWithdraw + withdrawAmount);
+        vm.stopPrank();
+    }
+
+    function testFuzz_DepositSaleTokens(uint256 amount) public {
+        // Bound amount
+        amount = bound(amount, 1000, type(uint128).max);
+
+        vm.startPrank(admin);
+        sale.depositSaleTokens(amount);
+        assertEq(saleToken.balanceOf(address(sale)), amount);
+        vm.stopPrank();
     }
 }

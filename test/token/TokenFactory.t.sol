@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
-import {TokenFactory} from "../../contracts/token/TokenFactory.sol";
-import {Token} from "../../contracts/token/Token.sol";
+import { Test } from "forge-std/Test.sol";
+import { TokenFactory } from "../../contracts/token/TokenFactory.sol";
+import { Token } from "../../contracts/token/Token.sol";
 
 contract TokenFactoryTest is Test {
     TokenFactory public factory;
@@ -62,6 +62,48 @@ contract TokenFactoryTest is Test {
 
         factory.createToken("Token2", "TK2");
         assertEq(factory.allTokensLength(), 2);
+        vm.stopPrank();
+    }
+}
+
+contract TokenFactoryFuzzTests is Test {
+    TokenFactory public factory;
+    address public admin;
+
+    function setUp() public {
+        admin = makeAddr("admin");
+        factory = new TokenFactory(admin);
+    }
+
+    function testFuzz_CreateMultipleTokens(uint256 numTokens) public {
+        // Bound to reasonable range
+        numTokens = bound(numTokens, 1, 10);
+
+        vm.startPrank(admin);
+        address[] memory tokens = new address[](numTokens);
+
+        for (uint256 i = 0; i < numTokens; i++) {
+            address token =
+                factory.createToken(string.concat("Token", vm.toString(i)), string.concat("TK", vm.toString(i)));
+            tokens[i] = token;
+            assertNotEq(token, address(0));
+        }
+
+        assertEq(factory.allTokensLength(), numTokens);
+        vm.stopPrank();
+    }
+
+    function testFuzz_TokenNamesAndSymbols(string calldata name, string calldata symbol) public {
+        vm.assume(bytes(name).length > 0 && bytes(name).length <= 32);
+        vm.assume(bytes(symbol).length > 0 && bytes(symbol).length <= 8);
+
+        vm.startPrank(admin);
+        address token = factory.createToken(name, symbol);
+        assertNotEq(token, address(0));
+
+        Token createdToken = Token(token);
+        assertEq(createdToken.name(), name);
+        assertEq(createdToken.symbol(), symbol);
         vm.stopPrank();
     }
 }

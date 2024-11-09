@@ -878,3 +878,124 @@ contract PairTest is Test {
         vm.stopPrank();
     }
 }
+
+contract PairFuzzTests is Test {
+    Pair public pair;
+    Token public baseToken;
+    Token public quoteToken;
+    address public admin;
+    address public user;
+
+    function setUp() public {
+        admin = makeAddr("admin");
+        user = makeAddr("user");
+
+        vm.startPrank(admin);
+        baseToken = new Token("Base Token", "BASE", admin);
+        quoteToken = new Token("Quote Token", "QUOTE", admin);
+        pair = new Pair(address(baseToken), address(quoteToken), 100, admin);
+
+        baseToken.mint(user, type(uint128).max);
+        quoteToken.mint(user, type(uint128).max);
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        baseToken.approve(address(pair), type(uint128).max);
+        quoteToken.approve(address(pair), type(uint128).max);
+        vm.stopPrank();
+    }
+
+    function testFuzz_AddLiquidity(uint256 baseAmount, uint256 quoteAmount) public {
+        // Bound inputs to reasonable ranges
+        baseAmount = bound(baseAmount, 1e18, 1e24); // 1 to 1M tokens
+        quoteAmount = bound(quoteAmount, 1e18, 1e24);
+
+        vm.startPrank(user);
+        uint256 liquidity = pair.addLiquidity(baseAmount, quoteAmount);
+
+        assertGt(liquidity, 0);
+        assertEq(baseToken.balanceOf(address(pair)), baseAmount);
+        assertEq(quoteToken.balanceOf(address(pair)), quoteAmount);
+        vm.stopPrank();
+    }
+
+    function testFuzz_RemoveLiquidity(uint256 baseAmount, uint256 quoteAmount, uint256 removeAmount) public {
+        // Bound inputs to more reasonable ranges and maintain ratio
+        baseAmount = bound(baseAmount, 1e18, 1e24);
+        quoteAmount = bound(quoteAmount, 1e18, 1e24);
+
+        vm.startPrank(user);
+        pair.addLiquidity(baseAmount, quoteAmount);
+
+        // Ensure removeAmount is between 1 and user's liquidity balance
+        uint256 userBalance = pair.balanceOf(user);
+        removeAmount = bound(removeAmount, 1, userBalance);
+
+        pair.approve(address(pair), removeAmount);
+        (uint256 baseOut, uint256 quoteOut) = pair.removeLiquidity(removeAmount, 0, 0, block.number + 1);
+
+        assertLe(baseOut, baseAmount);
+        assertLe(quoteOut, quoteAmount);
+        vm.stopPrank();
+    }
+
+    function testFuzz_Swap(uint256 baseAmount, uint256 quoteAmount, uint256 swapAmount) public {
+        // Bound inputs to more reasonable ranges to avoid overflow
+        baseAmount = bound(baseAmount, 1e18, 1e24); // 1 to 1M tokens
+        quoteAmount = bound(quoteAmount, 1e18, 1e24);
+
+        vm.startPrank(user);
+        // Add initial liquidity
+        pair.addLiquidity(baseAmount, quoteAmount);
+
+        // Bound swap amount to max 3% of reserves and ensure it's within approval
+        uint256 maxSwap = (baseAmount * 3) / 100;
+        swapAmount = bound(swapAmount, 1e6, maxSwap);
+
+        uint256 expectedOutput =
+            pair.getAmountOfTokens(swapAmount, pair.getBaseTokenBalance(), pair.getQuoteTokenBalance());
+
+        // Ensure we have enough approval for the swap
+        baseToken.approve(address(pair), swapAmount);
+
+        pair.swapBaseToQuote(swapAmount, expectedOutput, block.number + 1);
+
+        // Verify reserves after swap
+        assertTrue(pair.verifyBalances());
+        vm.stopPrank();
+    }
+
+    function testFuzz_SetFee(uint256 fee) public {
+        // Bound fee to valid range
+        fee = bound(fee, 1, pair.MAX_FEE());
+
+        vm.prank(admin);
+        pair.setFee(fee);
+        assertEq(pair.swapFee(), fee);
+    }
+
+    function testFuzz_EmergencyWithdraw(uint256 baseAmount, uint256 withdrawAmount) public {
+        // Bound inputs
+        baseAmount = bound(baseAmount, 1e18, 1e24);
+
+        vm.startPrank(user);
+        pair.addLiquidity(baseAmount, baseAmount);
+        vm.stopPrank();
+
+        withdrawAmount = bound(withdrawAmount, 1, baseAmount);
+
+        vm.prank(admin);
+        pair.emergencyWithdraw(address(baseToken), withdrawAmount);
+        assertEq(baseToken.balanceOf(admin), withdrawAmount);
+    }
+
+    function testFuzz_GetAmountOfTokens(uint256 inputAmount, uint256 inputReserve, uint256 outputReserve) public view {
+        // Bound inputs to reasonable ranges
+        inputAmount = bound(inputAmount, 1e6, 1e24);
+        inputReserve = bound(inputReserve, 1e18, 1e24);
+        outputReserve = bound(outputReserve, 1e18, 1e24);
+
+        uint256 output = pair.getAmountOfTokens(inputAmount, inputReserve, outputReserve);
+        assert(output <= outputReserve);
+    }
+}

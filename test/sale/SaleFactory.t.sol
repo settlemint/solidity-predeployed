@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: FSL-1.1-MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
-import {SaleFactory} from "../../contracts/sale/SaleFactory.sol";
-import {Sale} from "../../contracts/sale/Sale.sol";
-import {Token} from "../../contracts/token/Token.sol";
+import { Test } from "forge-std/Test.sol";
+import { SaleFactory } from "../../contracts/sale/SaleFactory.sol";
+import { Sale } from "../../contracts/sale/Sale.sol";
+import { Token } from "../../contracts/token/Token.sol";
 
 contract SaleFactoryTest is Test {
     SaleFactory public factory;
@@ -14,10 +14,7 @@ contract SaleFactoryTest is Test {
     address public user1;
 
     event SaleCreated(
-        address indexed saleAddress,
-        address indexed saleToken,
-        address indexed paymentToken,
-        uint256 price
+        address indexed saleAddress, address indexed saleToken, address indexed paymentToken, uint256 price
     );
 
     function setUp() public {
@@ -81,5 +78,55 @@ contract SaleFactoryTest is Test {
     function testFail_CreateSaleUnauthorized() public {
         vm.prank(user1);
         factory.createSale(address(saleToken), address(paymentToken), 100);
+    }
+}
+
+contract SaleFactoryFuzzTests is Test {
+    SaleFactory public factory;
+    Token public saleToken;
+    Token public paymentToken;
+    address public admin;
+
+    function setUp() public {
+        admin = makeAddr("admin");
+        factory = new SaleFactory(admin);
+        saleToken = new Token("Sale Token", "SALE", admin);
+        paymentToken = new Token("Payment Token", "PAY", admin);
+    }
+
+    function testFuzz_CreateMultipleSales(uint256 numSales, uint256 initialPrice) public {
+        // Bound inputs to reasonable ranges
+        numSales = bound(numSales, 1, 10);
+        initialPrice = bound(initialPrice, 1e6, 1e20);
+
+        vm.startPrank(admin);
+        address[] memory tokens = new address[](numSales);
+
+        // Create tokens
+        for (uint256 i = 0; i < numSales; i++) {
+            Token newToken =
+                new Token(string.concat("Token", vm.toString(i)), string.concat("TK", vm.toString(i)), admin);
+            tokens[i] = address(newToken);
+        }
+
+        // Create sales for each token
+        for (uint256 i = 0; i < numSales; i++) {
+            address sale = factory.createSale(tokens[i], address(paymentToken), initialPrice);
+            assertNotEq(sale, address(0));
+            assertEq(factory.getSale(tokens[i]), sale);
+        }
+
+        assertEq(factory.allSalesLength(), numSales);
+        vm.stopPrank();
+    }
+
+    function testFuzz_CreateSaleWithDifferentPrices(uint256 price) public {
+        // Bound price to reasonable range
+        price = bound(price, 1e6, 1e20);
+
+        vm.startPrank(admin);
+        address sale = factory.createSale(address(saleToken), address(paymentToken), price);
+        assertNotEq(sale, address(0));
+        vm.stopPrank();
     }
 }
