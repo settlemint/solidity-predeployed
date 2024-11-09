@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { Token } from "../../contracts/token/Token.sol";
+import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 
 contract TokenTest is Test {
     Token public token;
@@ -221,6 +222,143 @@ contract TokenTest is Test {
     function test_ConstructorZeroAddress() public {
         vm.expectRevert(abi.encodeWithSelector(Token.InvalidInput.selector, "Zero admin address"));
         new Token("Test Token", "TEST", address(0));
+    }
+
+    // Add these helper functions at the top of the contract
+    function getPermitDigest(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 nonce,
+        uint256 deadline
+    )
+        internal
+        view
+        returns (bytes32)
+    {
+        return keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                token.DOMAIN_SEPARATOR(),
+                keccak256(
+                    abi.encode(
+                        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
+                        owner,
+                        spender,
+                        value,
+                        nonce,
+                        deadline
+                    )
+                )
+            )
+        );
+    }
+
+    function getPermitSignature(
+        uint256 privateKey,
+        address spender,
+        uint256 value,
+        uint256 deadline
+    )
+        internal
+        view
+        returns (uint8 v, bytes32 r, bytes32 s)
+    {
+        address owner = vm.addr(privateKey);
+        bytes32 digest = getPermitDigest(owner, spender, value, token.nonces(owner), deadline);
+        (v, r, s) = vm.sign(privateKey, digest);
+    }
+
+    // Add these test functions
+    function test_PermitApproval() public {
+        uint256 privateKey = 0xA11CE;
+        address owner = vm.addr(privateKey);
+        uint256 amount = 1000e18;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        vm.prank(admin);
+        token.mint(owner, amount);
+
+        (uint8 v, bytes32 r, bytes32 s) = getPermitSignature(privateKey, user1, amount, deadline);
+
+        // Verify initial state
+        assertEq(token.allowance(owner, user1), 0);
+        assertEq(token.nonces(owner), 0);
+
+        // Submit permit
+        token.permit(owner, user1, amount, deadline, v, r, s);
+
+        // Verify permit effect
+        assertEq(token.allowance(owner, user1), amount);
+        assertEq(token.nonces(owner), 1);
+
+        // Test the approved transfer
+        vm.prank(user1);
+        token.transferFrom(owner, user2, amount);
+        assertEq(token.balanceOf(user2), amount);
+    }
+
+    function test_PermitExpired() public {
+        uint256 privateKey = 0xA11CE;
+        address owner = vm.addr(privateKey);
+        uint256 amount = 1000e18;
+        uint256 deadline = block.timestamp - 1; // Expired deadline
+
+        vm.prank(admin);
+        token.mint(owner, amount);
+
+        (uint8 v, bytes32 r, bytes32 s) = getPermitSignature(privateKey, user1, amount, deadline);
+
+        // Use the correct error selector for expired deadline
+        vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("ERC2612ExpiredSignature(uint256)")), deadline));
+        token.permit(owner, user1, amount, deadline, v, r, s);
+    }
+
+    function test_PermitInvalidSignature() public {
+        uint256 privateKey = 0xA11CE;
+        address owner = vm.addr(privateKey);
+        uint256 amount = 1000e18;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        vm.prank(admin);
+        token.mint(owner, amount);
+
+        (uint8 v, bytes32 r, bytes32 s) = getPermitSignature(privateKey, user1, amount, deadline);
+
+        // Try to use permit with wrong amount
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("ERC2612InvalidSigner(address,address)")),
+                0x0A48848e0C8b84A8ea071f96AE4036b9edCb8aF4,
+                owner
+            )
+        );
+        token.permit(owner, user1, amount + 1, deadline, v, r, s);
+    }
+
+    function testFuzz_Permit(uint256 privateKey, uint256 amount, uint256 deadline) public {
+        // Bound privateKey to be less than the curve order
+        privateKey = bound(privateKey, 1, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140);
+        vm.assume(privateKey != 0);
+
+        // Bound amount and deadline
+        amount = bound(amount, 1, type(uint128).max);
+        deadline = bound(deadline, block.timestamp, type(uint64).max);
+
+        address owner = vm.addr(privateKey);
+
+        vm.prank(admin);
+        token.mint(owner, amount);
+
+        (uint8 v, bytes32 r, bytes32 s) = getPermitSignature(privateKey, user1, amount, deadline);
+
+        token.permit(owner, user1, amount, deadline, v, r, s);
+        assertEq(token.allowance(owner, user1), amount);
+        assertEq(token.nonces(owner), 1);
+
+        vm.prank(user1);
+        token.transferFrom(owner, user2, amount);
+        assertEq(token.balanceOf(user2), amount);
     }
 }
 
