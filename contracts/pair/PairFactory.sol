@@ -52,20 +52,18 @@ contract PairFactory is AccessControl {
             revert InvalidInput("Zero address");
         }
 
-        (address token0, address token1) = baseToken < quoteToken ? (baseToken, quoteToken) : (quoteToken, baseToken);
-
-        if (getPair[token0][token1] != address(0)) {
+        if (getPair[baseToken][quoteToken] != address(0) || getPair[quoteToken][baseToken] != address(0)) {
             revert InvalidOperation("Pair exists");
         }
 
-        bytes32 salt = keccak256(abi.encodePacked(token0, token1));
-        Pair newPair = new Pair{ salt: salt }(token0, token1, 100, msg.sender);
+        bytes32 salt = keccak256(abi.encodePacked(baseToken, quoteToken));
+        Pair newPair = new Pair{ salt: salt }(baseToken, quoteToken, 100, msg.sender);
 
         pair = address(newPair);
-        getPair[token0][token1] = pair;
-        getPair[token1][token0] = pair;
+        getPair[baseToken][quoteToken] = pair;
+        getPair[quoteToken][baseToken] = pair;
         allPairs.push(pair);
 
-        emit PairCreated(token0, token1, pair, allPairs.length);
+        emit PairCreated(baseToken, quoteToken, pair, allPairs.length);
     }
 }

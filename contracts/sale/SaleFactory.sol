@@ -21,8 +21,13 @@ contract SaleFactory is AccessControl {
     /// @param saleToken The token being sold
     /// @param paymentToken The token used for payment
     /// @param price The initial price set for the sale
+    /// @param paymentRecipient The address of the payment recipient
     event SaleCreated(
-        address indexed saleAddress, address indexed saleToken, address indexed paymentToken, uint256 price
+        address indexed saleAddress,
+        address indexed saleToken,
+        address indexed paymentToken,
+        uint256 price,
+        address paymentRecipient
     );
 
     /// @notice Maps sale token to its sale contract address
@@ -39,11 +44,13 @@ contract SaleFactory is AccessControl {
     /// @param saleToken The token to be sold
     /// @param paymentToken The token used for payment
     /// @param initialPrice The initial price per token
+    /// @param paymentRecipient The address of the payment recipient
     /// @return sale The address of the newly created sale contract
     function createSale(
         address saleToken,
         address paymentToken,
-        uint256 initialPrice
+        uint256 initialPrice,
+        address paymentRecipient
     )
         external
         onlyRole(FACTORY_ROLE)
@@ -60,13 +67,13 @@ contract SaleFactory is AccessControl {
         }
 
         bytes32 salt = keccak256(abi.encodePacked(saleToken, paymentToken, msg.sender));
-        Sale newSale = new Sale{ salt: salt }(saleToken, paymentToken, initialPrice, msg.sender);
+        Sale newSale = new Sale{ salt: salt }(saleToken, paymentToken, initialPrice, msg.sender, paymentRecipient);
 
         sale = address(newSale);
         getSale[saleToken] = sale;
         allSales.push(sale);
 
-        emit SaleCreated(sale, saleToken, paymentToken, initialPrice);
+        emit SaleCreated(sale, saleToken, paymentToken, initialPrice, paymentRecipient);
     }
 
     /// @notice Returns the total number of sales created

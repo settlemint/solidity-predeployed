@@ -29,11 +29,21 @@ contract Sale is AccessControl, Pausable, ReentrancyGuard {
     uint256 public price;
     string public name;
     string public symbol;
+    address public paymentRecipient;
 
-    constructor(address _saleToken, address _paymentToken, uint256 _initialPrice, address _admin) {
+    constructor(
+        address _saleToken,
+        address _paymentToken,
+        uint256 _initialPrice,
+        address _admin,
+        address _paymentRecipient
+    ) {
         if (_admin == address(0)) revert InvalidInput("Zero admin address");
         if (_saleToken == address(0) || _paymentToken == address(0)) {
             revert InvalidInput("Zero token address");
+        }
+        if (_paymentRecipient == address(0)) {
+            revert InvalidInput("Zero payment recipient");
         }
         if (_saleToken == _paymentToken) {
             revert InvalidInput("Same token address");
@@ -45,6 +55,7 @@ contract Sale is AccessControl, Pausable, ReentrancyGuard {
         saleToken = _saleToken;
         paymentToken = _paymentToken;
         price = _initialPrice;
+        paymentRecipient = _paymentRecipient;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(ADMIN_ROLE, _admin);
@@ -76,7 +87,7 @@ contract Sale is AccessControl, Pausable, ReentrancyGuard {
 
         emit TokensSold(msg.sender, saleTokenAmount, paymentAmount);
 
-        IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), paymentAmount);
+        IERC20(paymentToken).safeTransferFrom(msg.sender, paymentRecipient, paymentAmount);
         IERC20(saleToken).safeTransfer(msg.sender, saleTokenAmount);
     }
 
@@ -102,5 +113,10 @@ contract Sale is AccessControl, Pausable, ReentrancyGuard {
         if (amount == 0) revert InvalidInput("Zero deposit amount");
         IERC20(saleToken).safeTransferFrom(msg.sender, address(this), amount);
         emit SaleTokensDeposited(amount);
+    }
+
+    function setPaymentRecipient(address _newRecipient) external onlyRole(ADMIN_ROLE) {
+        if (_newRecipient == address(0)) revert InvalidInput("Zero address");
+        paymentRecipient = _newRecipient;
     }
 }
