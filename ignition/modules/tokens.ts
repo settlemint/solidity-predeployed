@@ -14,7 +14,7 @@ export const TokensModule = buildModule("TokensModule", (m) => {
     { id: "readUSDCAddress" }
   );
   const usdc = m.contractAt("Token", usdcAddress, { id: "contractUSDC" });
-  m.call(usdc, "mint", [deployer, "10000000000000000000000000"], { id: "mintUSDC" });
+  m.call(usdc, "mint", [deployer, "1000000000000000000000000000"], { id: "mintUSDC" });
 
   // USDT (18 decimals) - 1 million USDT
   const createUSDT = m.call(tokenFactory, "createToken",
@@ -25,7 +25,7 @@ export const TokensModule = buildModule("TokensModule", (m) => {
     { id: "readUSDTAddress" }
   );
   const usdt = m.contractAt("Token", usdtAddress, { id: "contractUSDT" });
-  m.call(usdt, "mint", [deployer, "10000000000000000000000000"], { id: "mintUSDT" });
+  m.call(usdt, "mint", [deployer, "1000000000000000000000000000"], { id: "mintUSDT" });
 
   // DAI (18 decimals) - 1 million DAI
   const createDAI = m.call(tokenFactory, "createToken",
@@ -36,7 +36,7 @@ export const TokensModule = buildModule("TokensModule", (m) => {
     { id: "readDAIAddress" }
   );
   const dai = m.contractAt("Token", daiAddress, { id: "contractDAI" });
-  m.call(dai, "mint", [deployer, "10000000000000000000000000"], { id: "mintDAI" });
+  m.call(dai, "mint", [deployer, "1000000000000000000000000000"], { id: "mintDAI" });
 
   // BOND (18 decimals) - 100,000 BOND
   const createBond = m.call(tokenFactory, "createToken",
@@ -47,7 +47,7 @@ export const TokensModule = buildModule("TokensModule", (m) => {
     { id: "readBondAddress" }
   );
   const bond = m.contractAt("Token", bondAddress, { id: "contractBond" });
-  m.call(bond, "mint", [deployer, "10000000000000000000000000"], { id: "mintBond" });
+  m.call(bond, "mint", [deployer, "1000000000000000000000000000"], { id: "mintBond" });
 
   // CALL (18 decimals) - 100,000 CALL
   const createOption = m.call(tokenFactory, "createToken",
@@ -58,7 +58,7 @@ export const TokensModule = buildModule("TokensModule", (m) => {
     { id: "readOptionAddress" }
   );
   const option = m.contractAt("Token", optionAddress, { id: "contractOption" });
-  m.call(option, "mint", [deployer, "10000000000000000000000000"], { id: "mintOption" });
+  m.call(option, "mint", [deployer, "1000000000000000000000000000"], { id: "mintOption" });
 
   // BTCF (18 decimals) - 10,000 BTCF
   const createFuture = m.call(tokenFactory, "createToken",
@@ -69,7 +69,7 @@ export const TokensModule = buildModule("TokensModule", (m) => {
     { id: "readFutureAddress" }
   );
   const future = m.contractAt("Token", futureAddress, { id: "contractFuture" });
-  m.call(future, "mint", [deployer, "10000000000000000000000000"], { id: "mintFuture" });
+  m.call(future, "mint", [deployer, "1000000000000000000000000000"], { id: "mintFuture" });
 
   // SWAP (18 decimals) - 100,000 SWAP
   const createSwap = m.call(tokenFactory, "createToken",
@@ -80,7 +80,7 @@ export const TokensModule = buildModule("TokensModule", (m) => {
     { id: "readSwapAddress" }
   );
   const swap = m.contractAt("Token", swapAddress, { id: "contractSwap" });
-  m.call(swap, "mint", [deployer, "10000000000000000000000000"], { id: "mintSwap" });
+  m.call(swap, "mint", [deployer, "1000000000000000000000000000"], { id: "mintSwap" });
 
   // XAUT (18 decimals) - 50,000 XAUT
   const createSynthetic = m.call(tokenFactory, "createToken",
@@ -99,15 +99,15 @@ export const TokensModule = buildModule("TokensModule", (m) => {
   );
 
   const amounts = [
-    "234567000000000000000000", // 234,567 USDC
-    "456789000000000000000000", // 456,789 USDC
-    "123456000000000000000000", // 123,456 USDC
-    "345678000000000000000000", // 345,678 USDC
-    "432109000000000000000000", // 432,109 USDC
-    "321098000000000000000000", // 321,098 USDC
-    "210987000000000000000000", // 210,987 USDC
-    "198765000000000000000000", // 198,765 USDC
-    "445566000000000000000000", // 445,566 USDC
+    "23456700000000000000000000", // 23.4M USDC
+    "45678900000000000000000000", // 45.6M USDC
+    "12345600000000000000000000", // 12.3M USDC
+    "34567800000000000000000000", // 34.5M USDC
+    "43210900000000000000000000", // 43.2M USDC
+    "32109800000000000000000000", // 32.1M USDC
+    "21098700000000000000000000", // 21.0M USDC
+    "19876500000000000000000000", // 19.8M USDC
+    "44556600000000000000000000", // 44.5M USDC
   ];
 
   testAccounts.forEach((address, i) => {
