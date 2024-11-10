@@ -12,6 +12,7 @@ contract SaleTest is Test {
     address public admin;
     address public user1;
     address public user2;
+    address public user9;
 
     event PriceUpdated(uint256 oldPrice, uint256 newPrice);
     event TokensSold(address indexed buyer, uint256 saleTokenAmount, uint256 paymentTokenAmount);
@@ -22,11 +23,12 @@ contract SaleTest is Test {
         admin = makeAddr("admin");
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
+        user9 = makeAddr("user9");
 
         vm.startPrank(admin);
         saleToken = new Token("Sale Token", "SALE", admin);
         paymentToken = new Token("Payment Token", "PAY", admin);
-        sale = new Sale(address(saleToken), address(paymentToken), 1e18, admin);
+        sale = new Sale(address(saleToken), address(paymentToken), 1e18, admin, user9);
 
         // Mint tokens for testing
         saleToken.mint(admin, 1000e18);
@@ -79,7 +81,7 @@ contract SaleTest is Test {
         sale.buyTokens(buyAmount);
 
         assertEq(saleToken.balanceOf(user1), buyAmount);
-        assertEq(paymentToken.balanceOf(address(sale)), paymentAmount);
+        assertEq(paymentToken.balanceOf(user9), paymentAmount);
         vm.stopPrank();
     }
 
@@ -126,27 +128,27 @@ contract SaleTest is Test {
 
     function test_RevertWhen_AdminIsZeroAddress() public {
         vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero admin address"));
-        new Sale(address(saleToken), address(paymentToken), 1e18, address(0));
+        new Sale(address(saleToken), address(paymentToken), 1e18, address(0), user9);
     }
 
     function test_RevertWhen_SaleTokenIsZeroAddress() public {
         vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero token address"));
-        new Sale(address(0), address(paymentToken), 1e18, admin);
+        new Sale(address(0), address(paymentToken), 1e18, admin, user9);
     }
 
     function test_RevertWhen_PaymentTokenIsZeroAddress() public {
         vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero token address"));
-        new Sale(address(saleToken), address(0), 1e18, admin);
+        new Sale(address(saleToken), address(0), 1e18, admin, user9);
     }
 
     function test_RevertWhen_SameTokenAddresses() public {
         vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Same token address"));
-        new Sale(address(saleToken), address(saleToken), 1e18, admin);
+        new Sale(address(saleToken), address(saleToken), 1e18, admin, user9);
     }
 
     function test_RevertWhen_InitialPriceIsZero() public {
         vm.expectRevert(abi.encodeWithSelector(Sale.InvalidInput.selector, "Zero price"));
-        new Sale(address(saleToken), address(paymentToken), 0, admin);
+        new Sale(address(saleToken), address(paymentToken), 0, admin, user9);
     }
 
     function test_RevertWhen_SetPriceToZero() public {
@@ -213,15 +215,17 @@ contract SaleFuzzTests is Test {
     Token public paymentToken;
     address public admin;
     address public user;
+    address public user9;
 
     function setUp() public {
         admin = makeAddr("admin");
         user = makeAddr("user");
+        user9 = makeAddr("user9");
 
         vm.startPrank(admin);
         saleToken = new Token("Sale Token", "SALE", admin);
         paymentToken = new Token("Payment Token", "PAY", admin);
-        sale = new Sale(address(saleToken), address(paymentToken), 1e18, admin);
+        sale = new Sale(address(saleToken), address(paymentToken), 1e18, admin, user9);
 
         // Mint tokens for testing
         saleToken.mint(admin, type(uint128).max);
@@ -247,7 +251,7 @@ contract SaleFuzzTests is Test {
         sale.buyTokens(amount);
 
         assertEq(saleToken.balanceOf(user), amount);
-        assertEq(paymentToken.balanceOf(address(sale)), (amount * sale.price()) / 1e18);
+        assertEq(paymentToken.balanceOf(address(user9)), (amount * sale.price()) / 1e18);
         vm.stopPrank();
     }
 

@@ -16,7 +16,7 @@ contract TokenFactoryTest is Test {
         admin = makeAddr("admin");
         user1 = makeAddr("user1");
         vm.prank(admin);
-        factory = new TokenFactory(admin);
+        factory = new TokenFactory();
     }
 
     function test_CreateToken() public {
@@ -72,7 +72,7 @@ contract TokenFactoryFuzzTests is Test {
 
     function setUp() public {
         admin = makeAddr("admin");
-        factory = new TokenFactory(admin);
+        factory = new TokenFactory();
     }
 
     function testFuzz_CreateMultipleTokens(uint256 numTokens) public {

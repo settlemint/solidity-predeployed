@@ -19,7 +19,7 @@ contract PairFactoryTest is Test {
         admin = makeAddr("admin");
         user1 = makeAddr("user1");
 
-        factory = new PairFactory(admin);
+        factory = new PairFactory();
         token0 = new Token("Token0", "TK0", admin);
         token1 = new Token("Token1", "TK1", admin);
     }
@@ -74,11 +74,6 @@ contract PairFactoryTest is Test {
         assertEq(factory.allPairsLength(), 3);
         vm.stopPrank();
     }
-
-    function testFail_CreatePairUnauthorized() public {
-        vm.prank(user1);
-        factory.createPair(address(token0), address(token1));
-    }
 }
 
 contract PairFactoryFuzzTests is Test {
@@ -89,7 +84,7 @@ contract PairFactoryFuzzTests is Test {
 
     function setUp() public {
         admin = makeAddr("admin");
-        factory = new PairFactory(admin);
+        factory = new PairFactory();
         token0 = new Token("Token0", "TK0", admin);
         token1 = new Token("Token1", "TK1", admin);
     }

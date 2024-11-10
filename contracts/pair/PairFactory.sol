@@ -2,14 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { Pair } from "./Pair.sol";
-import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /// @title DexFactory
 /// @notice Factory contract for creating and managing Dex pairs
 /// @dev Creates and tracks ERC20-ERC20 trading pairs
-contract PairFactory is AccessControl {
-    bytes32 public constant FACTORY_ROLE = keccak256("FACTORY_ROLE");
-
+contract PairFactory {
     /// @notice Thrown when input validation fails
     error InvalidInput(string message);
     /// @notice Thrown when operation validation fails
@@ -29,11 +26,6 @@ contract PairFactory is AccessControl {
     /// @notice Array containing addresses of all created pairs
     address[] public allPairs;
 
-    constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(FACTORY_ROLE, msg.sender);
-    }
-
     /// @notice Returns the total number of pairs created
     /// @return Number of pairs in existence
     function allPairsLength() external view returns (uint256) {
@@ -44,7 +36,7 @@ contract PairFactory is AccessControl {
     /// @param baseToken Address of the base token
     /// @param quoteToken Address of the quote token
     /// @return pair Address of the newly created pair
-    function createPair(address baseToken, address quoteToken) external onlyRole(FACTORY_ROLE) returns (address pair) {
+    function createPair(address baseToken, address quoteToken) external returns (address pair) {
         if (baseToken == quoteToken) {
             revert InvalidInput("Identical addresses");
         }

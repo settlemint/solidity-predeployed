@@ -2,15 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { Sale } from "./Sale.sol";
-import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /// @title SaleFactory
 /// @dev A factory contract for creating and managing token sales
 /// @notice This contract allows for the creation of new token sales with access control
-contract SaleFactory is AccessControl {
-    /// @notice Role identifier for administrators
-    bytes32 public constant FACTORY_ROLE = keccak256("FACTORY_ROLE");
-
+contract SaleFactory {
     /// @notice Thrown when input validation fails
     error InvalidInput(string message);
     /// @notice Thrown when operation validation fails
@@ -35,11 +31,6 @@ contract SaleFactory is AccessControl {
     /// @notice Array of all created sale contracts
     address[] public allSales;
 
-    constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(FACTORY_ROLE, msg.sender);
-    }
-
     /// @notice Creates a new token sale contract
     /// @param saleToken The token to be sold
     /// @param paymentToken The token used for payment
@@ -53,7 +44,6 @@ contract SaleFactory is AccessControl {
         address paymentRecipient
     )
         external
-        onlyRole(FACTORY_ROLE)
         returns (address sale)
     {
         if (saleToken == address(0) || paymentToken == address(0)) {

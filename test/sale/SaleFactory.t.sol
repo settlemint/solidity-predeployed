@@ -12,6 +12,7 @@ contract SaleFactoryTest is Test {
     Token public paymentToken;
     address public admin;
     address public user1;
+    address public user9;
 
     event SaleCreated(
         address indexed saleAddress, address indexed saleToken, address indexed paymentToken, uint256 price
@@ -20,9 +21,9 @@ contract SaleFactoryTest is Test {
     function setUp() public {
         admin = makeAddr("admin");
         user1 = makeAddr("user1");
-
+        user9 = makeAddr("user9");
         vm.startPrank(admin);
-        factory = new SaleFactory(admin);
+        factory = new SaleFactory();
         saleToken = new Token("Sale Token", "SALE", admin);
         paymentToken = new Token("Payment Token", "PAY", admin);
         vm.stopPrank();
@@ -30,7 +31,7 @@ contract SaleFactoryTest is Test {
 
     function test_CreateSale() public {
         vm.startPrank(admin);
-        address sale = factory.createSale(address(saleToken), address(paymentToken), 100);
+        address sale = factory.createSale(address(saleToken), address(paymentToken), 100, user9);
 
         assertNotEq(sale, address(0));
         assertEq(factory.getSale(address(saleToken)), sale);
@@ -42,22 +43,22 @@ contract SaleFactoryTest is Test {
     function test_CreateSaleWithZeroAddress() public {
         vm.startPrank(admin);
         vm.expectRevert(abi.encodeWithSelector(SaleFactory.InvalidInput.selector, "Zero address"));
-        factory.createSale(address(0), address(paymentToken), 100);
+        factory.createSale(address(0), address(paymentToken), 100, user9);
         vm.stopPrank();
     }
 
     function test_CreateSaleWithIdenticalTokens() public {
         vm.startPrank(admin);
         vm.expectRevert(abi.encodeWithSelector(SaleFactory.InvalidInput.selector, "Identical addresses"));
-        factory.createSale(address(saleToken), address(saleToken), 100);
+        factory.createSale(address(saleToken), address(saleToken), 100, user9);
         vm.stopPrank();
     }
 
     function test_CreateDuplicateSale() public {
         vm.startPrank(admin);
-        factory.createSale(address(saleToken), address(paymentToken), 100);
+        factory.createSale(address(saleToken), address(paymentToken), 100, user9);
         vm.expectRevert(abi.encodeWithSelector(SaleFactory.InvalidOperation.selector, "Sale exists"));
-        factory.createSale(address(saleToken), address(paymentToken), 200);
+        factory.createSale(address(saleToken), address(paymentToken), 200, user9);
         vm.stopPrank();
     }
 
@@ -67,17 +68,12 @@ contract SaleFactoryTest is Test {
         vm.startPrank(admin);
         Token newToken = new Token("New Token", "NEW", admin);
 
-        factory.createSale(address(saleToken), address(paymentToken), 100);
+        factory.createSale(address(saleToken), address(paymentToken), 100, user9);
         assertEq(factory.allSalesLength(), 1);
 
-        factory.createSale(address(newToken), address(paymentToken), 100);
+        factory.createSale(address(newToken), address(paymentToken), 100, user9);
         assertEq(factory.allSalesLength(), 2);
         vm.stopPrank();
-    }
-
-    function testFail_CreateSaleUnauthorized() public {
-        vm.prank(user1);
-        factory.createSale(address(saleToken), address(paymentToken), 100);
     }
 }
 
@@ -86,10 +82,12 @@ contract SaleFactoryFuzzTests is Test {
     Token public saleToken;
     Token public paymentToken;
     address public admin;
+    address public user9;
 
     function setUp() public {
         admin = makeAddr("admin");
-        factory = new SaleFactory(admin);
+        user9 = makeAddr("user9");
+        factory = new SaleFactory();
         saleToken = new Token("Sale Token", "SALE", admin);
         paymentToken = new Token("Payment Token", "PAY", admin);
     }
@@ -111,7 +109,7 @@ contract SaleFactoryFuzzTests is Test {
 
         // Create sales for each token
         for (uint256 i = 0; i < numSales; i++) {
-            address sale = factory.createSale(tokens[i], address(paymentToken), initialPrice);
+            address sale = factory.createSale(tokens[i], address(paymentToken), initialPrice, user9);
             assertNotEq(sale, address(0));
             assertEq(factory.getSale(tokens[i]), sale);
         }
@@ -125,7 +123,7 @@ contract SaleFactoryFuzzTests is Test {
         price = bound(price, 1e6, 1e20);
 
         vm.startPrank(admin);
-        address sale = factory.createSale(address(saleToken), address(paymentToken), price);
+        address sale = factory.createSale(address(saleToken), address(paymentToken), price, user9);
         assertNotEq(sale, address(0));
         vm.stopPrank();
     }
