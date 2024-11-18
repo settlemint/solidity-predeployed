@@ -38,7 +38,14 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
     event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount, uint256 liquidity);
     event Burn(address indexed sender, uint256 baseAmount, uint256 quoteAmount, address indexed to, uint256 liquidity);
-    event Swap(address indexed sender, uint256 baseAmountIn, uint256 quoteAmountIn, uint256 baseAmountOut, uint256 quoteAmountOut, address indexed to);
+    event Swap(
+        address indexed sender,
+        uint256 baseAmountIn,
+        uint256 quoteAmountIn,
+        uint256 baseAmountOut,
+        uint256 quoteAmountOut,
+        address indexed to
+    );
     event FeeUpdated(uint256 oldFee, uint256 newFee);
     event EmergencyWithdraw(address token, uint256 amount);
 
@@ -46,48 +53,63 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     address public immutable quoteToken;
     TimelockController public immutable timelock;
 
+    /// @notice Fee charged on swaps, denominated in basis points (1/10th of a percent)
+    /// @dev Basis points are used instead of percentages to avoid floating point arithmetic,
+    /// which is error-prone and gas-intensive in Solidity. 1 basis point = 0.01%
     uint256 public swapFee;
-    uint256 public constant MAX_FEE = 1000;
+    /// @notice Denominator used for basis point calculations (1000 = 100%)
+    /// @dev Using basis points with integer math provides precise fee calculations while
+    /// avoiding floating point operations. The denominator of 1000 allows for fees to be
+    /// specified with 0.1% granularity (e.g. 5 = 0.5%, 10 = 1%)
+    uint256 public constant BASIS_POINTS_DENOMINATOR = 1000;
+    /// @notice Minimum liquidity that must be maintained in the pool to prevent manipulation
+    /// @dev This minimum liquidity is permanently locked in the pool and can never be withdrawn.
+    /// It prevents the first liquidity provider from manipulating prices by withdrawing almost
+    /// all liquidity, which would make the pool's reserves extremely small. With very small
+    /// reserves, tiny trades could cause massive price swings. The locked minimum liquidity
+    /// ensures there's always some baseline reserves to maintain price stability.
     uint256 private constant MINIMUM_LIQUIDITY = 1000;
+    /// @notice Maximum allowed difference between tracked and actual token balances based on BASIS_POINTS_DENOMINATOR
+    /// @dev Value of 100 represents 10% of BASIS_POINTS_DENOMINATOR (1000), allowing for a 10% tolerance in balance
+    /// tracking
     uint256 private constant AMOUNT_TOLERANCE = 100;
+    /// @notice Maximum token amount that can be used in a single operation
     uint256 public constant MAX_TOKEN_AMOUNT = type(uint128).max;
 
     uint256 private _trackedBaseBalance;
     uint256 private _trackedQuoteBalance;
 
+    /// @notice Initializes the DEX contract with base and quote tokens, initial fee, and admin
+    /// @dev Sets up the DEX with token pair, fee structure, and admin roles. Also creates a timelock controller.
+    /// @param _baseToken The address of the base token for the trading pair
+    /// @param _quoteToken The address of the quote token for the trading pair
+    /// @param _initialFee The initial swap fee in basis points (1 basis point = 0.01%)
+    /// @param _admin The address that will be granted admin roles
     constructor(
         address _baseToken,
         address _quoteToken,
         uint256 _initialFee,
         address _admin
-    ) ERC20(
-        string.concat(
-            IERC20Metadata(_baseToken).symbol(),
-            "/",
-            IERC20Metadata(_quoteToken).symbol(),
-            " LP"
-        ),
-        string.concat(
-            IERC20Metadata(_baseToken).symbol(),
-            "-",
-            IERC20Metadata(_quoteToken).symbol(),
-            "-LP"
+    )
+        ERC20(
+            string.concat(IERC20Metadata(_baseToken).symbol(), "/", IERC20Metadata(_quoteToken).symbol(), " LP"),
+            string.concat(IERC20Metadata(_baseToken).symbol(), "-", IERC20Metadata(_quoteToken).symbol(), "-LP")
         )
-    ) ERC20Permit(
-        string.concat(
-            IERC20Metadata(_baseToken).symbol(),
-            "/",
-            IERC20Metadata(_quoteToken).symbol(),
-            " LP"
-        )
-    ) {
+        ERC20Permit(string.concat(IERC20Metadata(_baseToken).symbol(), "/", IERC20Metadata(_quoteToken).symbol(), " LP"))
+    {
         if (_baseToken == address(0) || _quoteToken == address(0)) revert ZeroAddress();
         if (_baseToken == _quoteToken) revert SameTokenAddress(_baseToken);
-        if (_initialFee > MAX_FEE) revert FeeTooHigh(_initialFee);
+        if (_initialFee > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(_initialFee);
         if (_initialFee == 0) revert InvalidFee(_initialFee);
 
-        try IERC20(_baseToken).totalSupply() {} catch { revert InvalidERC20(); }
-        try IERC20(_quoteToken).totalSupply() {} catch { revert InvalidERC20(); }
+        try IERC20(_baseToken).totalSupply() { }
+        catch {
+            revert InvalidERC20();
+        }
+        try IERC20(_quoteToken).totalSupply() { }
+        catch {
+            revert InvalidERC20();
+        }
 
         uint8 baseDecimals = ERC20Permit(_baseToken).decimals();
         uint8 quoteDecimals = ERC20Permit(_quoteToken).decimals();
@@ -108,71 +130,121 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         timelock = new TimelockController(2 days, proposers, executors, _admin);
     }
 
+    /// @notice Pauses all token transfers and swaps
+    /// @dev Can only be called by accounts with ADMIN_ROLE
     function pause() external onlyRole(ADMIN_ROLE) {
         _pause();
     }
 
+    /// @notice Unpauses all token transfers and swaps
+    /// @dev Can only be called by accounts with ADMIN_ROLE
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
     }
 
+    /// @notice Updates the swap fee for the DEX
+    /// @dev Can only be called by the timelock contract to ensure fee changes are time-delayed
+    /// @param _newFee The new fee value in basis points (1 basis point = 0.01%)
+    /// @custom:throws UnauthorizedTimelock if caller is not the timelock contract
+    /// @custom:throws InvalidFee if the new fee is 0
+    /// @custom:throws FeeTooHigh if the new fee exceeds BASIS_POINTS_DENOMINATOR
     function setFee(uint256 _newFee) external {
         if (msg.sender != address(timelock)) revert UnauthorizedTimelock();
         if (_newFee == 0) revert InvalidFee(_newFee);
+        if (_newFee > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(_newFee);
         emit FeeUpdated(swapFee, _newFee);
         swapFee = _newFee;
     }
 
+    /// @notice Returns the current tracked balance of the base token in the DEX
+    /// @return The amount of base tokens currently held by the DEX
     function getBaseTokenBalance() public view returns (uint256) {
         return _trackedBaseBalance;
     }
 
+    /// @notice Returns the current tracked balance of the quote token in the DEX
+    /// @return The amount of quote tokens currently held by the DEX
     function getQuoteTokenBalance() public view returns (uint256) {
         return _trackedQuoteBalance;
     }
 
+    /// @notice Adds liquidity to the DEX by depositing base and quote tokens
+    /// @dev Handles both initial liquidity provision and subsequent additions
+    /// @param baseAmount Amount of base tokens to add as liquidity
+    /// @param quoteAmount Amount of quote tokens to add as liquidity
+    /// @return Amount of LP tokens minted to the provider
     function addLiquidity(uint256 baseAmount, uint256 quoteAmount) public nonReentrant returns (uint256) {
-        if (baseAmount > MAX_TOKEN_AMOUNT || quoteAmount > MAX_TOKEN_AMOUNT)
+        // Check if amounts exceed maximum allowed token amounts
+        if (baseAmount > MAX_TOKEN_AMOUNT || quoteAmount > MAX_TOKEN_AMOUNT) {
             revert MaxTokenAmountExceeded();
+        }
 
         uint256 _liquidity;
         uint256 baseBalance = getBaseTokenBalance();
         uint256 quoteBalance = getQuoteTokenBalance();
 
+        // Handle initial liquidity provision when pool is empty
         if (baseBalance == 0 && quoteBalance == 0) {
+            // Calculate initial LP tokens as sqrt of token amounts product
             _liquidity = Math.sqrt(baseAmount * quoteAmount);
             if (_liquidity <= MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
 
-            // Effects before interactions
+            // Effects: Mint minimum liquidity to address(1) to prevent first LP token from having too much power
+            // Then mint remaining LP tokens to provider
             _mint(address(1), MINIMUM_LIQUIDITY);
             _mint(msg.sender, _liquidity - MINIMUM_LIQUIDITY);
             emit Mint(msg.sender, baseAmount, quoteAmount, _liquidity - MINIMUM_LIQUIDITY);
 
-            // Interactions last
+            // Interactions: Transfer tokens from provider to DEX
             IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
             IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
-        } else {
+        }
+        // Handle subsequent liquidity additions
+        else {
+            // Ensure both reserves are non-zero
             if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
 
+            // Calculate expected quote amount based on current ratio
+            // This maintains the price ratio when adding liquidity
+            // Derivation from price ratio formula:
+            // 1. baseBalance/quoteBalance = ratio
+            // 2. (baseBalance + baseAmount)/(quoteBalance + quoteAmount) = baseBalance/quoteBalance = ratio
+            // 3. baseBalance + baseAmount = baseBalance/quoteBalance * (quoteBalance + quoteAmount)
+            // 4. baseBalance + baseAmount = baseBalance/quoteBalance * quoteBalance + baseBalance/quoteBalance *
+            // quoteAmount
+            // 5. simplify: baseBalance + baseAmount = baseBalance + baseBalance/quoteBalance * quoteAmount
+            // 6. baseBalance cancels out: baseAmount = baseBalance/quoteBalance * quoteAmount
+            // 7. multiply by quoteBalance to eliminate fraction:
+            //    quoteBalance * baseAmount = quoteBalance * (baseBalance/quoteBalance * quoteAmount)
+            // 8. simplify: quoteBalance * baseAmount = baseBalance * quoteAmount
+            // 9. solve for quoteAmount: quoteAmount = (quoteBalance * baseAmount)/baseBalance
             uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
-            uint256 lowerBound = (expectedQuoteAmount * (10000 - AMOUNT_TOLERANCE)) / 10000;
-            uint256 upperBound = (expectedQuoteAmount * (10000 + AMOUNT_TOLERANCE)) / 10000;
 
+            // Calculate acceptable range using AMOUNT_TOLERANCE
+            uint256 lowerBound =
+                (expectedQuoteAmount * (BASE_POINTS_DENOMINATOR - AMOUNT_TOLERANCE)) / BASE_POINTS_DENOMINATOR;
+            uint256 upperBound =
+                (expectedQuoteAmount * (BASE_POINTS_DENOMINATOR + AMOUNT_TOLERANCE)) / BASE_POINTS_DENOMINATOR;
+
+            // Ensure provided quote amount maintains price ratio within tolerance
             if (quoteAmount < lowerBound || quoteAmount > upperBound) {
                 revert AmountRatioMismatch(quoteAmount, expectedQuoteAmount);
             }
 
+            // Calculate LP tokens to mint proportional to contribution
             _liquidity = (totalSupply() * baseAmount) / baseBalance;
             if (_liquidity == 0) revert InsufficientLiquidityMinted();
 
-            // Effects before interactions
+            // Effects: Mint LP tokens to provider
             _mint(msg.sender, _liquidity);
             emit Mint(msg.sender, baseAmount, quoteAmount, _liquidity);
 
-            // Interactions last
+            // Interactions: Transfer tokens from provider to DEX
             IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
             IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
         }
+
+        // Update tracked balances
         _trackedBaseBalance += baseAmount;
         _trackedQuoteBalance += quoteAmount;
         return _liquidity;
@@ -183,7 +255,12 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 minBaseAmount,
         uint256 minQuoteAmount,
         uint256 deadline
-    ) public nonReentrant whenNotPaused returns (uint256, uint256) {
+    )
+        public
+        nonReentrant
+        whenNotPaused
+        returns (uint256, uint256)
+    {
         requireValidBalances();
         if (block.number > deadline) revert DeadlineExpired();
         if (amount == 0) revert ZeroAmount();
@@ -208,17 +285,29 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         return (baseAmount, quoteAmount);
     }
 
+    /// @notice Calculates the output amount of tokens for a given input amount and reserves
+    /// @dev Uses constant product formula (k = x * y) to maintain balanced reserves,
+    ///      where k is the invariant liquidity parameter and x,y are the token reserves.
+    ///      The formula ensures that after any swap, the product of the reserves remains constant.
+    /// @param inputAmount The amount of input tokens to swap
+    /// @param inputReserve The current reserve of input tokens
+    /// @param outputReserve The current reserve of output tokens
+    /// @return The amount of output tokens that will be received
     function getAmountOfTokens(
         uint256 inputAmount,
         uint256 inputReserve,
         uint256 outputReserve
-    ) public view returns (uint256) {
+    )
+        public
+        view
+        returns (uint256)
+    {
         if (inputReserve == 0 || outputReserve == 0) revert InvalidReserves();
         if (inputAmount == 0) revert InvalidTokenAmount(inputAmount);
 
-        uint256 inputAmountWithFee = inputAmount * (10000 - swapFee);
+        uint256 inputAmountWithFee = inputAmount * (BASIS_POINTS_DENOMINATOR - swapFee);
         uint256 numerator = inputAmountWithFee * outputReserve;
-        uint256 denominator = (inputReserve * 10000) + inputAmountWithFee;
+        uint256 denominator = (inputReserve * BASIS_POINTS_DENOMINATOR) + inputAmountWithFee;
 
         unchecked {
             return numerator / denominator;
@@ -229,7 +318,11 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 baseAmount,
         uint256 minQuoteAmount,
         uint256 deadline
-    ) public nonReentrant whenNotPaused {
+    )
+        public
+        nonReentrant
+        whenNotPaused
+    {
         requireValidBalances();
         uint256 initialBalance = getBaseTokenBalance();
         uint256 maxSwapAmount = (initialBalance * 3) / 100;
@@ -239,11 +332,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         if (block.number > deadline) revert DeadlineExpired();
         if (baseAmount == 0) revert InvalidTokenAmount(baseAmount);
 
-        uint256 quoteBought = getAmountOfTokens(
-            baseAmount,
-            getBaseTokenBalance(),
-            getQuoteTokenBalance()
-        );
+        uint256 quoteBought = getAmountOfTokens(baseAmount, getBaseTokenBalance(), getQuoteTokenBalance());
 
         if (quoteBought < minQuoteAmount) revert SlippageExceeded();
 
@@ -261,16 +350,16 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 quoteAmount,
         uint256 minBaseAmount,
         uint256 deadline
-    ) public nonReentrant whenNotPaused {
+    )
+        public
+        nonReentrant
+        whenNotPaused
+    {
         requireValidBalances();
         if (block.number > deadline) revert DeadlineExpired();
         if (quoteAmount == 0) revert InvalidTokenAmount(quoteAmount);
 
-        uint256 baseBought = getAmountOfTokens(
-            quoteAmount,
-            getQuoteTokenBalance(),
-            getBaseTokenBalance()
-        );
+        uint256 baseBought = getAmountOfTokens(quoteAmount, getQuoteTokenBalance(), getBaseTokenBalance());
 
         if (baseBought < minBaseAmount) revert SlippageExceeded();
 
@@ -284,10 +373,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         _trackedBaseBalance -= baseBought;
     }
 
-    function emergencyWithdraw(
-        address token,
-        uint256 amount
-    ) external nonReentrant onlyRole(ADMIN_ROLE) {
+    function emergencyWithdraw(address token, uint256 amount) external nonReentrant onlyRole(ADMIN_ROLE) {
         IERC20(token).safeTransfer(msg.sender, amount);
         emit EmergencyWithdraw(token, amount);
     }
@@ -300,11 +386,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
         if (baseAmount == 0) revert InvalidTokenAmount(0);
 
-        return getAmountOfTokens(
-            baseAmount,
-            baseBalance,
-            quoteBalance
-        );
+        return getAmountOfTokens(baseAmount, baseBalance, quoteBalance);
     }
 
     function getQuoteToBasePrice(uint256 quoteAmount) external view returns (uint256) {
@@ -314,11 +396,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
         if (quoteAmount == 0) revert InvalidTokenAmount(0);
 
-        return getAmountOfTokens(
-            quoteAmount,
-            quoteBalance,
-            baseBalance
-        );
+        return getAmountOfTokens(quoteAmount, quoteBalance, baseBalance);
     }
 
     function verifyBalances() public view returns (bool) {
@@ -326,8 +404,8 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 quoteBalance = IERC20(quoteToken).balanceOf(address(this));
 
         return (
-            _abs(baseBalance, _trackedBaseBalance) <= AMOUNT_TOLERANCE &&
-            _abs(quoteBalance, _trackedQuoteBalance) <= AMOUNT_TOLERANCE
+            _abs(baseBalance, _trackedBaseBalance) <= AMOUNT_TOLERANCE
+                && _abs(quoteBalance, _trackedQuoteBalance) <= AMOUNT_TOLERANCE
         );
     }
 
