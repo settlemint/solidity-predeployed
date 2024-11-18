@@ -232,6 +232,15 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
             }
 
             // Calculate LP tokens to mint proportional to contribution
+            // Formula: new_LP_tokens = (total_LP_supply * new_base_tokens) / total_base_tokens
+            // This maintains proportional ownership - if you contribute x% of current assets,
+            // you get x% of new LP tokens
+            // Derivation:
+            // 1. Each LP token should represent same proportion of pool
+            // 2. If you contribute x% of current assets, you should get x% of new LP tokens
+            // 3. Therefore, since all ratios should be equal:
+            //    new_LP_tokens/total_LP_supply = baseAmount/baseBalance = quoteAmount/quoteBalance
+            // 4. Solving for new_LP_tokens gives us this formula (we use base because it's more accurate)
             _liquidity = (totalSupply() * baseAmount) / baseBalance;
             if (_liquidity == 0) revert InsufficientLiquidityMinted();
 
