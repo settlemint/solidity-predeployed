@@ -233,7 +233,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @custom:throws UnauthorizedTimelock if caller is not the timelock contract
     /// @custom:throws InvalidFee if the new fee is 0
     /// @custom:throws FeeTooHigh if the new fee exceeds BASIS_POINTS_DENOMINATOR
-    function setFee(uint256 _newFeeInBasisPoints) external {
+    function setSwapFee(uint256 _newFeeInBasisPoints) external {
         if (msg.sender != address(timelock)) revert UnauthorizedTimelock();
         if (_newFeeInBasisPoints == 0) revert InvalidFee(_newFeeInBasisPoints);
         if (_newFeeInBasisPoints > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(_newFeeInBasisPoints);
@@ -276,9 +276,8 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
         // Handle initial liquidity provision when pool is empty
         if (baseBalance == 0 && quoteBalance == 0) {
-            // Calculate initial LP tokens as sqrt of token amounts product
-            _liquidity = Math.sqrt(baseAmount * quoteAmount);
-            if (_liquidity <= MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
+            // Calculate initial LP tokens and validate minimum liquidity requirement
+            _liquidity = _calculateAndVerifyLiquidity(baseAmount, quoteAmount);
 
             // Check total supply limit
             if (totalSupply + _liquidity > type(uint256).max - MINIMUM_LIQUIDITY) {
@@ -389,8 +388,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         // Check that remaining liquidity maintains minimum sqrt(k) requirement
         uint256 remainingBaseBalance = baseBalance - baseAmount;
         uint256 remainingQuoteBalance = quoteBalance - quoteAmount;
-        uint256 k = Math.sqrt(remainingBaseBalance * remainingQuoteBalance);
-        if (k < MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
+        _calculateAndVerifyLiquidity(remainingBaseBalance, remainingQuoteBalance);
 
         // Effects before interactions
         _burn(msg.sender, amount);
@@ -810,5 +808,24 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @return The absolute difference |a - b|
     function _absDifference(uint256 a, uint256 b) internal pure returns (uint256) {
         return a >= b ? a - b : b - a;
+    }
+
+    /// @notice Calculates liquidity value and validates against minimum requirement
+    /// @dev Reverts if liquidity requirements are not met
+    /// @param baseAmount The amount of base tokens
+    /// @param quoteAmount The amount of quote tokens
+    /// @return liquidity The calculated liquidity value (sqrt of token amounts product)
+    function _calculateAndVerifyLiquidity(
+        uint256 baseAmount,
+        uint256 quoteAmount
+    )
+        private
+        pure
+        returns (uint256 liquidity)
+    {
+        if (baseAmount == 0 || quoteAmount == 0) revert ZeroAmount();
+        liquidity = Math.sqrt(baseAmount * quoteAmount);
+        if (liquidity < MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
+        return liquidity;
     }
 }
