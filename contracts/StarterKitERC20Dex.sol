@@ -13,13 +13,14 @@ import { TimelockController } from "@openzeppelin/contracts/governance/TimelockC
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 /// @notice This contract implements a constant product automated market maker (AMM) where the product
+/// @dev Only provides basic emergency withdrawal functionality by pausing the contract and allowing
+/// @dev users to liquidate their positions. More sophisticated emergency handling may be needed.
 /// of the two token reserves remains constant after each trade (x * y = k). When adding or removing
 /// liquidity, the ratio of tokens must match the current price ratio to maintain price stability.
 contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    bytes32 public constant FEE_SETTER_ROLE = keccak256("FEE_SETTER_ROLE");
 
     error SameTokenAddress(address token);
     error InvalidReserves();
@@ -38,6 +39,10 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     error BalanceMismatch();
     error SwapAmountTooLarge(uint256 amount, uint256 maxAmount);
     error UnauthorizedTimelock();
+    error ContractNotPaused();
+    error EmergencyWithdrawAlreadyInitiated();
+    error NoLiquidityToClaim();
+    error ZeroTotalSupply();
 
     event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount, uint256 liquidity);
     event Burn(address indexed sender, uint256 baseAmount, uint256 quoteAmount, address indexed to, uint256 liquidity);
@@ -51,6 +56,14 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     );
     event FeeUpdated(uint256 oldFee, uint256 newFee);
     event EmergencyWithdraw(address token, uint256 amount);
+    event EmergencyWithdrawInitiated(
+        uint256 totalLPSupply,
+        uint256 emergencyBaseBalance,
+        uint256 emergencyQuoteBalance,
+        uint256 trackedBaseBalance,
+        uint256 trackedQuoteBalance
+    );
+    event EmergencyWithdrawExecuted(address indexed user, uint256 baseAmount, uint256 quoteAmount, uint256 lpBalance);
 
     address public immutable baseToken;
     address public immutable quoteToken;
@@ -85,6 +98,14 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
     uint256 private _trackedBaseBalance;
     uint256 private _trackedQuoteBalance;
+
+    /// @notice Flag to track if emergency withdrawal has been initiated
+    bool public emergencyWithdrawInitiated;
+
+    /// @notice Snapshot of balances and supply when emergency was initiated
+    uint256 private _emergencyTotalSupply;
+    uint256 private _emergencyBaseBalance;
+    uint256 private _emergencyQuoteBalance;
 
     /// @notice Initializes the DEX contract with base and quote tokens, initial fee, and admin
     /// @dev Sets up the DEX with token pair, fee structure, and admin roles. Also creates a timelock controller.
@@ -128,13 +149,11 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(ADMIN_ROLE, _admin);
-        _grantRole(FEE_SETTER_ROLE, _admin);
 
         // Create a new TimelockController contract that adds a 2-day delay to certain administrative actions (like fee
         // changes).
         // Sets up the admin as both a proposer and executor of delayed actions. This is a security feature that
-        // prevents
-        // immediate changes to sensitive parameters, giving users time to react to proposed changes.
+        // prevents immediate changes to sensitive parameters, giving users time to react to proposed changes.
         address[] memory proposers = new address[](1);
         address[] memory executors = new address[](1);
         proposers[0] = _admin;
@@ -152,6 +171,15 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @dev Can only be called by accounts with ADMIN_ROLE
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
+    }
+
+    /// @notice Allows transferring admin rights in emergency
+    function transferEmergencyAdmin(address newAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (msg.sender != address(timelock)) revert UnauthorizedTimelock();
+
+        _revokeRole(ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, newAdmin);
+        emit AdminTransferred(msg.sender, newAdmin);
     }
 
     /// @notice Updates the swap fee for the DEX
@@ -456,32 +484,126 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         _trackedBaseBalance -= baseBought;
     }
 
-    function emergencyWithdraw(address token, uint256 amount) external nonReentrant onlyRole(ADMIN_ROLE) {
-        IERC20(token).safeTransfer(msg.sender, amount);
-        emit EmergencyWithdraw(token, amount);
+    /// @notice Allows recovery of tokens that are not part of the trading pair
+    /// @dev Only callable by admin role
+    /// @param token The address of the token to recover (must not be base or quote token)
+    function recoverUnusedTokens(address token) external nonReentrant onlyRole(ADMIN_ROLE) {
+        if (token == address(0)) revert ZeroAddress();
+        if (token == baseToken || token == quoteToken) revert InvalidToken();
+
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        if (balance == 0) revert ZeroAmount();
+
+        IERC20(token).safeTransfer(msg.sender, balance);
+        emit TokenRecovered(token, balance);
     }
 
-    // Add view function for price calculation
+    /// @notice Initiates emergency shutdown and enables LP holders to withdraw their share
+    /// @dev Pauses contract and snapshots current state for withdrawals
+    function initiateEmergencyWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
+        if (emergencyWithdrawInitiated) revert EmergencyWithdrawAlreadyInitiated();
+
+        uint256 totalLPSupply = totalSupply();
+        if (totalLPSupply == 0) revert ZeroTotalSupply();
+
+        // Pause all operations first
+        _pause();
+
+        // Store actual token balances rather than tracked balances
+        // This ensures users can withdraw based on real token amounts in the contract
+        _emergencyBaseBalance = IERC20(baseToken).balanceOf(address(this));
+        _emergencyQuoteBalance = IERC20(quoteToken).balanceOf(address(this));
+        _emergencyTotalSupply = totalLPSupply;
+
+        emergencyWithdrawInitiated = true;
+
+        emit EmergencyWithdrawInitiated(
+            totalLPSupply,
+            _emergencyBaseBalance,
+            _emergencyQuoteBalance,
+            _trackedBaseBalance, // Include tracked balances in event for transparency
+            _trackedQuoteBalance
+        );
+    }
+
+    /// @notice Allows LP holders to withdraw their proportional share of tokens
+    /// @dev Uses actual token balances at emergency initiation for calculations
+    function withdrawLPEmergency() external nonReentrant whenPaused {
+        if (!emergencyWithdrawInitiated) revert EmergencyWithdrawNotInitiated();
+
+        uint256 lpBalance = balanceOf(msg.sender);
+        if (lpBalance == 0) revert NoLiquidityToClaim();
+
+        // Calculate share using actual token balances from emergency initiation
+        uint256 baseShare = (_emergencyBaseBalance * lpBalance) / _emergencyTotalSupply;
+        uint256 quoteShare = (_emergencyQuoteBalance * lpBalance) / _emergencyTotalSupply;
+
+        // Effects before interactions
+        _burn(msg.sender, lpBalance);
+
+        // Transfer tokens to user
+        IERC20(baseToken).safeTransfer(msg.sender, baseShare);
+        IERC20(quoteToken).safeTransfer(msg.sender, quoteShare);
+
+        emit EmergencyWithdrawExecuted(msg.sender, baseShare, quoteShare, lpBalance);
+    }
+
+    /// @notice Fallback function to handle unexpected ETH sent to the contract
+    /// @dev Emits ETHReceived event with the received amount
+    /// @dev This is needed since the contract may receive ETH by accident or through selfdestruct
+    receive() external payable {
+        emit ETHReceived(msg.value);
+    }
+
+    /// @notice Allows admin to withdraw any ETH accidentally sent to the contract
+    /// @dev Can only be called by accounts with ADMIN_ROLE
+    /// @dev Transfers entire ETH balance to the contract owner
+    function emergencyETHWithdraw() external onlyRole(ADMIN_ROLE) {
+        payable(owner()).transfer(address(this).balance);
+    }
+
+    /// @notice Calculates the amount of quote tokens that would be received for a given amount of base tokens
+    /// @dev Uses the constant product formula (x * y = k) to calculate the exchange rate
+    /// @param baseAmount The amount of base tokens to swap
+    /// @return The amount of quote tokens that would be received
+    /// @custom:throws InvalidReserves if either token balance is 0
+    /// @custom:throws ZeroAmount if baseAmount is 0
     function getBaseToQuotePrice(uint256 baseAmount) external view returns (uint256) {
+        // Get current balances of both tokens in the pool
         uint256 baseBalance = getBaseTokenBalance();
         uint256 quoteBalance = getQuoteTokenBalance();
 
+        // Revert if pool has no liquidity or if input amount is 0
         if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
-        if (baseAmount == 0) revert InvalidTokenAmount(0);
+        if (baseAmount == 0) revert ZeroAmount();
 
         return getAmountOfTokens(baseAmount, baseBalance, quoteBalance);
     }
 
+    /// @notice Calculates the amount of base tokens that would be received for a given amount of quote tokens
+    /// @dev Uses the constant product formula (x * y = k) to calculate the exchange rate
+    /// @param quoteAmount The amount of quote tokens to swap
+    /// @return The amount of base tokens that would be received
+    /// @custom:throws InvalidReserves if either token balance is 0
+    /// @custom:throws ZeroAmount if quoteAmount is 0
     function getQuoteToBasePrice(uint256 quoteAmount) external view returns (uint256) {
+        // Get current balances of both tokens in the pool
         uint256 baseBalance = getBaseTokenBalance();
         uint256 quoteBalance = getQuoteTokenBalance();
 
+        // Revert if pool has no liquidity or if input amount is 0
         if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
-        if (quoteAmount == 0) revert InvalidTokenAmount(0);
+        if (quoteAmount == 0) revert ZeroAmount();
 
         return getAmountOfTokens(quoteAmount, quoteBalance, baseBalance);
     }
 
+    /// @notice Verifies that the actual token balances match the tracked balances within tolerance
+    /// @dev Compares the contract's actual token balances against internally tracked balances
+    /// @dev Uses AMOUNT_TOLERANCE to allow for small rounding differences
+    /// @dev _trackedBaseBalance and _trackedQuoteBalance are internal state variables updated during swaps/liquidity
+    /// changes
+    /// @return true if actual balances are within AMOUNT_TOLERANCE of tracked balances, false otherwise
     function verifyBalances() public view returns (bool) {
         uint256 baseBalance = IERC20(baseToken).balanceOf(address(this));
         uint256 quoteBalance = IERC20(quoteToken).balanceOf(address(this));
