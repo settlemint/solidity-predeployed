@@ -174,6 +174,11 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @param quoteAmount Amount of quote tokens to add as liquidity
     /// @return Amount of LP tokens minted to the provider
     function addLiquidity(uint256 baseAmount, uint256 quoteAmount) public nonReentrant returns (uint256) {
+        // Check for zero amounts
+        if (baseAmount == 0 || quoteAmount == 0) {
+            revert ZeroAmount();
+        }
+
         // Check if amounts exceed maximum allowed token amounts
         if (baseAmount > MAX_TOKEN_AMOUNT || quoteAmount > MAX_TOKEN_AMOUNT) {
             revert MaxTokenAmountExceeded();
@@ -206,18 +211,12 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
             // Calculate expected quote amount based on current ratio
             // This maintains the price ratio when adding liquidity
-            // Derivation from price ratio formula:
-            // 1. baseBalance/quoteBalance = ratio
-            // 2. (baseBalance + baseAmount)/(quoteBalance + quoteAmount) = baseBalance/quoteBalance = ratio
-            // 3. baseBalance + baseAmount = baseBalance/quoteBalance * (quoteBalance + quoteAmount)
-            // 4. baseBalance + baseAmount = baseBalance/quoteBalance * quoteBalance + baseBalance/quoteBalance *
-            // quoteAmount
-            // 5. simplify: baseBalance + baseAmount = baseBalance + baseBalance/quoteBalance * quoteAmount
-            // 6. baseBalance cancels out: baseAmount = baseBalance/quoteBalance * quoteAmount
-            // 7. multiply by quoteBalance to eliminate fraction:
-            //    quoteBalance * baseAmount = quoteBalance * (baseBalance/quoteBalance * quoteAmount)
-            // 8. simplify: quoteBalance * baseAmount = baseBalance * quoteAmount
-            // 9. solve for quoteAmount: quoteAmount = (quoteBalance * baseAmount)/baseBalance
+            // Derivation from price ratio equality formula:
+            // 1. baseAmount/baseBalance = quoteAmount/quoteBalance (ratio equality)
+            // 2. Cross multiply to eliminate fractions:
+            //    baseAmount * quoteBalance = baseBalance * quoteAmount
+            // 3. Solve for quoteAmount:
+            //    quoteAmount = (baseAmount * quoteBalance) / baseBalance
             uint256 expectedQuoteAmount = (baseAmount * quoteBalance) / baseBalance;
 
             // Calculate acceptable range using AMOUNT_TOLERANCE
@@ -259,6 +258,13 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         return _liquidity;
     }
 
+    /// @notice Removes liquidity from the pool by burning LP tokens and receiving base and quote tokens
+    /// @dev Burns LP tokens and returns proportional amounts of base and quote tokens to the provider
+    /// @param amount The amount of LP tokens to burn
+    /// @param minBaseAmount The minimum amount of base tokens that must be received
+    /// @param minQuoteAmount The minimum amount of quote tokens that must be received
+    /// @param deadline The block number by which this transaction must be executed
+    /// @return Returns a tuple of the base and quote token amounts withdrawn
     function removeLiquidity(
         uint256 amount,
         uint256 minBaseAmount,
@@ -274,6 +280,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         if (block.number > deadline) revert DeadlineExpired();
         if (amount == 0) revert ZeroAmount();
 
+        // Calculate base and quote amounts based on share of total supply
         uint256 _totalSupply = totalSupply();
         uint256 baseAmount = (amount * getBaseTokenBalance()) / _totalSupply;
         uint256 quoteAmount = (amount * getQuoteTokenBalance()) / _totalSupply;
@@ -312,11 +319,19 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         returns (uint256)
     {
         if (inputReserve == 0 || outputReserve == 0) revert InvalidReserves();
-        if (inputAmount == 0) revert InvalidTokenAmount(inputAmount);
+        if (inputAmount == 0) revert ZeroAmount();
 
-        uint256 inputAmountWithFee = inputAmount * (BASIS_POINTS_DENOMINATOR - swapFee);
-        uint256 numerator = inputAmountWithFee * outputReserve;
-        uint256 denominator = (inputReserve * BASIS_POINTS_DENOMINATOR) + inputAmountWithFee;
+        // Calculate net input amount after the fee is deducted
+        uint256 netInputAmountAfterFeeInBasisPoints = inputAmount * (BASIS_POINTS_DENOMINATOR - swapFee);
+
+        // Calculate the numerator and denominator for the output amount
+        // Based on the constant product formula: k = x * y
+        // to keep the ratio of the reserves constant
+        // netInputAmountAfterFee / (inputReserve + netInputAmountAfterFee) = outputAmount / outputReserve
+        // Solving for outputAmount gives us:
+        // outputAmount = (netInputAmountAfterFee * outputReserve) / (inputReserve + netInputAmountAfterFee)
+        uint256 numerator = netInputAmountAfterFeeInBasisPoints * outputReserve;
+        uint256 denominator = (inputReserve * BASIS_POINTS_DENOMINATOR) + netInputAmountAfterFeeInBasisPoints;
 
         unchecked {
             return numerator / denominator;
@@ -413,16 +428,22 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 quoteBalance = IERC20(quoteToken).balanceOf(address(this));
 
         return (
-            _abs(baseBalance, _trackedBaseBalance) <= AMOUNT_TOLERANCE
-                && _abs(quoteBalance, _trackedQuoteBalance) <= AMOUNT_TOLERANCE
+            _absDifference(baseBalance, _trackedBaseBalance) <= AMOUNT_TOLERANCE
+                && _absDifference(quoteBalance, _trackedQuoteBalance) <= AMOUNT_TOLERANCE
         );
     }
 
+    /// @notice Reverts if tracked balances don't match actual token balances within tolerance
+    /// @dev Internal view function used as a guard against balance tracking errors
     function requireValidBalances() internal view {
         if (!verifyBalances()) revert BalanceMismatch();
     }
 
-    function _abs(uint256 a, uint256 b) internal pure returns (uint256) {
+    /// @notice Returns the absolute difference between two uint256 values
+    /// @param a First value
+    /// @param b Second value
+    /// @return The absolute difference |a - b|
+    function _absDifference(uint256 a, uint256 b) internal pure returns (uint256) {
         return a >= b ? a - b : b - a;
     }
 }
