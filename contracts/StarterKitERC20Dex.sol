@@ -48,6 +48,9 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     error FeeCollectorNotSet();
     error EmergencyWithdrawNotInitiated();
     error InvalidToken();
+    error TokenDecimalsTooHigh();
+    error MaxTotalSupplyExceeded();
+    error DivisionByZero();
 
     event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount, uint256 liquidity);
     event Burn(address indexed sender, uint256 baseAmount, uint256 quoteAmount, address indexed to, uint256 liquidity);
@@ -114,6 +117,12 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @notice Minimum amount required for fee collection
     uint256 private constant MINIMUM_COLLECTION_AMOUNT = 1000;
 
+    /// @notice The delay period required for timelock operations
+    /// @dev This constant sets a 2 day waiting period between when a timelock operation is proposed and when it can be
+    /// executed
+    /// This delay gives users time to react to proposed changes before they take effect
+    uint256 private constant TIMELOCK_DELAY = 2 days;
+
     /// @notice Fee charged on swaps, denominated in basis points (1/10th of a percent)
     /// @dev Basis points are used instead of percentages to avoid floating point arithmetic,
     /// which is error-prone and gas-intensive in Solidity. 1 basis point = 0.01%
@@ -171,6 +180,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint8 baseDecimals = ERC20Permit(_baseToken).decimals();
         uint8 quoteDecimals = ERC20Permit(_quoteToken).decimals();
         if (baseDecimals != quoteDecimals) revert TokenDecimalsMismatch();
+        if (baseDecimals > 18) revert TokenDecimalsTooHigh();
 
         baseToken = _baseToken;
         quoteToken = _quoteToken;
@@ -187,7 +197,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         address[] memory executors = new address[](1);
         proposers[0] = _admin;
         executors[0] = _admin;
-        timelock = new TimelockController(2 days, proposers, executors, _admin);
+        timelock = new TimelockController(TIMELOCK_DELAY, proposers, executors, _admin);
     }
 
     /// @notice Pauses all token transfers and swaps
@@ -262,12 +272,18 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 _liquidity;
         uint256 baseBalance = getBaseTokenBalance();
         uint256 quoteBalance = getQuoteTokenBalance();
+        uint256 totalSupply = totalSupply();
 
         // Handle initial liquidity provision when pool is empty
         if (baseBalance == 0 && quoteBalance == 0) {
             // Calculate initial LP tokens as sqrt of token amounts product
             _liquidity = Math.sqrt(baseAmount * quoteAmount);
             if (_liquidity <= MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
+
+            // Check total supply limit
+            if (totalSupply + _liquidity > type(uint256).max - MINIMUM_LIQUIDITY) {
+                revert MaxTotalSupplyExceeded();
+            }
 
             // Effects: Mint minimum liquidity to address(1) to prevent first LP token from having too much power
             // Then mint remaining LP tokens to provider
@@ -315,8 +331,13 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
             // 3. Therefore, since all ratios should be equal:
             //    new_LP_tokens/total_LP_supply = baseAmount/baseBalance = quoteAmount/quoteBalance
             // 4. Solving for new_LP_tokens gives us this formula (we use base because it's more accurate)
-            _liquidity = (totalSupply() * baseAmount) / baseBalance;
+            _liquidity = (totalSupply * baseAmount) / baseBalance;
             if (_liquidity == 0) revert InsufficientLiquidityMinted();
+
+            // Check total supply limit
+            if (totalSupply + _liquidity > type(uint256).max - MINIMUM_LIQUIDITY) {
+                revert MaxTotalSupplyExceeded();
+            }
 
             // Effects: Mint LP tokens to provider
             _mint(msg.sender, _liquidity);
@@ -617,6 +638,8 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @return baseAmount The amount of base tokens available to collect as fees
     /// @return quoteAmount The amount of quote tokens available to collect as fees
     function getPendingFees(address user) external view returns (uint256 baseAmount, uint256 quoteAmount) {
+        if (user == address(0)) revert ZeroAddress();
+
         uint256 baseFeesInBasisPoints = baseFeesOwedInBasisPoints[user];
         uint256 quoteFeesInBasisPoints = quoteFeesOwedInBasisPoints[user];
 
@@ -705,30 +728,33 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 numerator = netInputAmount * outputReserve;
         uint256 denominator = inputReserve + netInputAmount;
 
+        if (denominator == 0) revert DivisionByZero();
+
         unchecked {
             return numerator / denominator;
         }
     }
 
     /// @notice Calculates the net amount and fees without distributing them
-    /// @dev Pure function that can be used by both views and internal functions
+    /// @dev Pure function that handles fee calculations based on BASIS_POINTS_DENOMINATOR
     /// @param amount The amount to calculate fees for
-    /// @return netAmount The amount after fees are deducted
-    /// @return lpFees The fee amount for LPs
-    /// @return protocolFees The fee amount for protocol
+    /// @return netAmount The amount after all fees are deducted
+    /// @return lpFees The fee amount allocated to liquidity providers (90% of total fees)
+    /// @return protocolFees The fee amount allocated to protocol (10% of total fees)
     function _calculateNetAmount(uint256 amount)
         internal
         pure
-        returns (uint256 netAmount, uint256 lpFees, uint256 protocolFees)
+        returns (uint256 netAmount, uint256 lpFeesInBasisPoints, uint256 protocolFeesInBasisPoints)
     {
         if (amount == 0) return (0, 0, 0);
 
-        uint256 feeTotal = amount * swapFeeInBasisPoints;
-        protocolFees = (feeTotal * PROTOCOL_FEE_SHARE_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
-        lpFees = feeTotal - protocolFees;
-        netAmount = amount - ((lpFees + protocolFees) / BASIS_POINTS_DENOMINATOR);
+        uint256 feeTotalInBasisPoints = amount * swapFeeInBasisPoints;
+        uint256 protocolFeesInBasisPoints =
+            (feeTotalInBasisPoints * PROTOCOL_FEE_SHARE_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
+        uint256 lpFeesInBasisPoints = feeTotalInBasisPoints - protocolFeesInBasisPoints;
+        uint256 netAmount = amount - ((lpFeesInBasisPoints + protocolFeesInBasisPoints) / BASIS_POINTS_DENOMINATOR);
 
-        return (netAmount, lpFees, protocolFees);
+        return (netAmount, lpFeesInBasisPoints, protocolFeesInBasisPoints);
     }
 
     /// @notice Calculates and distributes trading fees between LPs and protocol
@@ -744,33 +770,35 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         returns (uint256 netBaseAmount, uint256 netQuoteAmount)
     {
         // Calculate all amounts and fees at once
-        (netBaseAmount, uint256 baseLpFees, uint256 baseProtocolFees) = _calculateNetAmount(baseAmount);
-        (netQuoteAmount, uint256 quoteLpFees, uint256 quoteProtocolFees) = _calculateNetAmount(quoteAmount);
+        (netBaseAmount, uint256 baseLpFeesInBasisPoints, uint256 baseProtocolFeesInBasisPoints) =
+            _calculateNetAmount(baseAmount);
+        (netQuoteAmount, uint256 quoteLpFeesInBasisPoints, uint256 quoteProtocolFeesInBasisPoints) =
+            _calculateNetAmount(quoteAmount);
 
-        // Update protocol fee tracking
         if (baseAmount > 0) {
-            protocolBaseFeesInBasisPoints += baseProtocolFees;
+            protocolBaseFeesInBasisPoints += baseProtocolFeesInBasisPoints;
         }
         if (quoteAmount > 0) {
-            protocolQuoteFeesInBasisPoints += quoteProtocolFees;
+            protocolQuoteFeesInBasisPoints += quoteProtocolFeesInBasisPoints;
         }
 
-        // Distribute LP fees if there are LP token holders
         uint256 totalLPSupply = totalSupply();
-        if (totalLPSupply > 0 && (baseLpFees > 0 || quoteLpFees > 0)) {
-            uint256 userLPShare = balanceOf(msg.sender) / totalLPSupply;
+        if (totalLPSupply > 0 && (baseLpFeesInBasisPoints > 0 || quoteLpFeesInBasisPoints > 0)) {
+            uint256 userLPShareInBasisPoints = (balanceOf(msg.sender) * BASIS_POINTS_DENOMINATOR) / totalLPSupply;
 
-            if (baseLpFees > 0) {
-                uint256 baseUserFeeShare = baseLpFees * userLPShare;
-                baseFeesOwedInBasisPoints[msg.sender] += baseUserFeeShare;
+            if (baseLpFeesInBasisPoints > 0) {
+                uint256 baseUserFeeShareInBasisPoints =
+                    (baseLpFeesInBasisPoints * userLPShareInBasisPoints) / BASIS_POINTS_DENOMINATOR;
+                baseFeesOwedInBasisPoints[msg.sender] += baseUserFeeShareInBasisPoints;
             }
 
-            if (quoteLpFees > 0) {
-                uint256 quoteUserFeeShare = quoteLpFees * userLPShare;
-                quoteFeesOwedInBasisPoints[msg.sender] += quoteUserFeeShare;
+            if (quoteLpFeesInBasisPoints > 0) {
+                uint256 quoteUserFeeShareInBasisPoints =
+                    (quoteLpFeesInBasisPoints * userLPShareInBasisPoints) / BASIS_POINTS_DENOMINATOR;
+                quoteFeesOwedInBasisPoints[msg.sender] += quoteUserFeeShareInBasisPoints;
             }
 
-            emit FeesAccrued(msg.sender, baseLpFees, quoteLpFees);
+            emit FeesAccrued(msg.sender, baseLpFeesInBasisPoints, quoteLpFeesInBasisPoints);
         }
 
         return (netBaseAmount, netQuoteAmount);
