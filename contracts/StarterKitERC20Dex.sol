@@ -12,6 +12,9 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
+/// @notice This contract implements a constant product automated market maker (AMM) where the product
+/// of the two token reserves remains constant after each trade (x * y = k). When adding or removing
+/// liquidity, the ratio of tokens must match the current price ratio to maintain price stability.
 contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -56,7 +59,11 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @notice Fee charged on swaps, denominated in basis points (1/10th of a percent)
     /// @dev Basis points are used instead of percentages to avoid floating point arithmetic,
     /// which is error-prone and gas-intensive in Solidity. 1 basis point = 0.01%
-    uint256 public swapFee;
+    uint256 public swapFeeInBasisPoints;
+    /// @notice Maximum allowed swap amount as a percentage of total reserves
+    /// @dev This limit prevents large trades that could significantly impact price or drain the pool.
+    /// The value 30 represents 3% (30/1000) of the pool's reserves as the maximum single swap size.
+    uint256 public constant MAX_SWAP_AMOUNT_IN_BASIS_POINTS = 30;
     /// @notice Denominator used for basis point calculations (1000 = 100%)
     /// @dev Using basis points with integer math provides precise fee calculations while
     /// avoiding floating point operations. The denominator of 1000 allows for fees to be
@@ -83,12 +90,12 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @dev Sets up the DEX with token pair, fee structure, and admin roles. Also creates a timelock controller.
     /// @param _baseToken The address of the base token for the trading pair
     /// @param _quoteToken The address of the quote token for the trading pair
-    /// @param _initialFee The initial swap fee in basis points (1 basis point = 0.01%)
+    /// @param _initialFeeInBasisPoints The initial swap fee in basis points (1 basis point = 0.01%)
     /// @param _admin The address that will be granted admin roles
     constructor(
         address _baseToken,
         address _quoteToken,
-        uint256 _initialFee,
+        uint256 _initialFeeInBasisPoints,
         address _admin
     )
         ERC20(
@@ -99,8 +106,8 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     {
         if (_baseToken == address(0) || _quoteToken == address(0)) revert ZeroAddress();
         if (_baseToken == _quoteToken) revert SameTokenAddress(_baseToken);
-        if (_initialFee > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(_initialFee);
-        if (_initialFee == 0) revert InvalidFee(_initialFee);
+        if (_initialFeeInBasisPoints > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(_initialFeeInBasisPoints);
+        if (_initialFeeInBasisPoints == 0) revert InvalidFee(_initialFeeInBasisPoints);
 
         try IERC20(_baseToken).totalSupply() { }
         catch {
@@ -117,12 +124,17 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
         baseToken = _baseToken;
         quoteToken = _quoteToken;
-        swapFee = _initialFee;
+        swapFeeInBasisPoints = _initialFeeInBasisPoints;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(ADMIN_ROLE, _admin);
         _grantRole(FEE_SETTER_ROLE, _admin);
 
+        // Create a new TimelockController contract that adds a 2-day delay to certain administrative actions (like fee
+        // changes).
+        // Sets up the admin as both a proposer and executor of delayed actions. This is a security feature that
+        // prevents
+        // immediate changes to sensitive parameters, giving users time to react to proposed changes.
         address[] memory proposers = new address[](1);
         address[] memory executors = new address[](1);
         proposers[0] = _admin;
@@ -144,16 +156,16 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
     /// @notice Updates the swap fee for the DEX
     /// @dev Can only be called by the timelock contract to ensure fee changes are time-delayed
-    /// @param _newFee The new fee value in basis points (1 basis point = 0.01%)
+    /// @param _newFeeInBasisPoints The new fee value in basis points (1 basis point = 0.01%)
     /// @custom:throws UnauthorizedTimelock if caller is not the timelock contract
     /// @custom:throws InvalidFee if the new fee is 0
     /// @custom:throws FeeTooHigh if the new fee exceeds BASIS_POINTS_DENOMINATOR
-    function setFee(uint256 _newFee) external {
+    function setFee(uint256 _newFeeInBasisPoints) external {
         if (msg.sender != address(timelock)) revert UnauthorizedTimelock();
-        if (_newFee == 0) revert InvalidFee(_newFee);
-        if (_newFee > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(_newFee);
-        emit FeeUpdated(swapFee, _newFee);
-        swapFee = _newFee;
+        if (_newFeeInBasisPoints == 0) revert InvalidFee(_newFeeInBasisPoints);
+        if (_newFeeInBasisPoints > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(_newFeeInBasisPoints);
+        emit FeeUpdated(swapFeeInBasisPoints, _newFeeInBasisPoints);
+        swapFeeInBasisPoints = _newFeeInBasisPoints;
     }
 
     /// @notice Returns the current tracked balance of the base token in the DEX
@@ -280,12 +292,21 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         if (block.number > deadline) revert DeadlineExpired();
         if (amount == 0) revert ZeroAmount();
 
+        uint256 baseBalance = getBaseTokenBalance();
+        uint256 quoteBalance = getQuoteTokenBalance();
+
         // Calculate base and quote amounts based on share of total supply
         uint256 _totalSupply = totalSupply();
-        uint256 baseAmount = (amount * getBaseTokenBalance()) / _totalSupply;
-        uint256 quoteAmount = (amount * getQuoteTokenBalance()) / _totalSupply;
+        uint256 baseAmount = (amount * baseBalance) / _totalSupply;
+        uint256 quoteAmount = (amount * quoteBalance) / _totalSupply;
 
         if (baseAmount < minBaseAmount || quoteAmount < minQuoteAmount) revert SlippageExceeded();
+
+        // Check that remaining liquidity maintains minimum sqrt(k) requirement
+        uint256 remainingBaseBalance = baseBalance - baseAmount;
+        uint256 remainingQuoteBalance = quoteBalance - quoteAmount;
+        uint256 k = Math.sqrt(remainingBaseBalance * remainingQuoteBalance);
+        if (k < MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
 
         // Effects before interactions
         _burn(msg.sender, amount);
@@ -322,14 +343,25 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         if (inputAmount == 0) revert ZeroAmount();
 
         // Calculate net input amount after the fee is deducted
-        uint256 netInputAmountAfterFeeInBasisPoints = inputAmount * (BASIS_POINTS_DENOMINATOR - swapFee);
+        uint256 netInputAmountAfterFeeInBasisPoints = inputAmount * (BASIS_POINTS_DENOMINATOR - swapFeeInBasisPoints);
 
         // Calculate the numerator and denominator for the output amount
-        // Based on the constant product formula: k = x * y
-        // to keep the ratio of the reserves constant
-        // netInputAmountAfterFee / (inputReserve + netInputAmountAfterFee) = outputAmount / outputReserve
-        // Solving for outputAmount gives us:
-        // outputAmount = (netInputAmountAfterFee * outputReserve) / (inputReserve + netInputAmountAfterFee)
+        // Based on the constant product formula: k = inputReserve * outputReserve
+        // 1. The constant k (liquidity) remains the same before and after the trade:
+        //    k = inputReserve * outputReserve = (inputReserve + netInputAmount) * (outputReserve - outputAmount)
+        // 2. Rearrange to isolate (outputReserve - outputAmount):
+        //    (inputReserve * outputReserve) / (inputReserve + netInputAmount) = outputReserve - outputAmount
+        // 3. Solve for outputAmount:
+        //    outputAmount = outputReserve - (inputReserve * outputReserve) / (inputReserve + netInputAmount)
+        // 4. Multiply both sides by (inputReserve + netInputAmount) to eliminate the denominator:
+        //    outputAmount * (inputReserve + netInputAmount) = outputReserve * (inputReserve + netInputAmount) -
+        //    inputReserve * outputReserve
+        // 5. Factor out outputReserve on the right-hand side:
+        //    outputAmount * (inputReserve + netInputAmount) = outputReserve * netInputAmount
+        // 6. Divide both sides by (inputReserve + netInputAmount) to isolate outputAmount:
+        //    outputAmount = (outputReserve * netInputAmount) / (inputReserve + netInputAmount)
+        // 7. Final formula:
+        //    outputAmount = (outputReserve * netInputAmount) / (inputReserve + netInputAmount)
         uint256 numerator = netInputAmountAfterFeeInBasisPoints * outputReserve;
         uint256 denominator = (inputReserve * BASIS_POINTS_DENOMINATOR) + netInputAmountAfterFeeInBasisPoints;
 
@@ -338,6 +370,10 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         }
     }
 
+    /// @notice Swaps base tokens for quote tokens with slippage protection and deadline
+    /// @param baseAmount Amount of base tokens to swap in, should be less than max swap amount
+    /// @param minQuoteAmount Minimum amount of quote tokens expected out to protect against slippage
+    /// @param deadline Block number by which swap must execute to prevent stale transactions
     function swapBaseToQuote(
         uint256 baseAmount,
         uint256 minQuoteAmount,
@@ -347,17 +383,24 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         nonReentrant
         whenNotPaused
     {
+        if (baseAmount == 0) revert ZeroAmount();
+        if (block.number > deadline) revert DeadlineExpired();
         requireValidBalances();
-        uint256 initialBalance = getBaseTokenBalance();
-        uint256 maxSwapAmount = (initialBalance * 3) / 100;
+
+        uint256 baseBalance = getBaseTokenBalance();
+        uint256 quoteBalance = getQuoteTokenBalance();
+
+        // Limit swap size to prevent price manipulation and excessive slippage by restricting
+        // trades to a small percentage of total pool liquidity
+        uint256 maxSwapAmount = (baseBalance * MAX_SWAP_AMOUNT_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
         if (baseAmount > maxSwapAmount) {
             revert SwapAmountTooLarge(baseAmount, maxSwapAmount);
         }
-        if (block.number > deadline) revert DeadlineExpired();
-        if (baseAmount == 0) revert InvalidTokenAmount(baseAmount);
 
-        uint256 quoteBought = getAmountOfTokens(baseAmount, getBaseTokenBalance(), getQuoteTokenBalance());
+        uint256 quoteBought = getAmountOfTokens(baseAmount, baseBalance, quoteBalance);
 
+        // check for zero output amount, this can happen if the swap amount is too large and rounding issues
+        if (quoteBought == 0) revert InvalidTokenAmount(quoteBought);
         if (quoteBought < minQuoteAmount) revert SlippageExceeded();
 
         // Effects before interactions
@@ -370,6 +413,10 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         _trackedQuoteBalance -= quoteBought;
     }
 
+    /// @notice Swaps quote tokens for base tokens with slippage protection and deadline
+    /// @param quoteAmount Amount of quote tokens to swap in, should be less than max swap amount
+    /// @param minBaseAmount Minimum amount of base tokens expected out to protect against slippage
+    /// @param deadline Block number by which swap must execute to prevent stale transactions
     function swapQuoteToBase(
         uint256 quoteAmount,
         uint256 minBaseAmount,
@@ -379,12 +426,24 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         nonReentrant
         whenNotPaused
     {
-        requireValidBalances();
+        if (quoteAmount == 0) revert ZeroAmount();
         if (block.number > deadline) revert DeadlineExpired();
-        if (quoteAmount == 0) revert InvalidTokenAmount(quoteAmount);
+        requireValidBalances();
 
-        uint256 baseBought = getAmountOfTokens(quoteAmount, getQuoteTokenBalance(), getBaseTokenBalance());
+        uint256 quoteBalance = getQuoteTokenBalance();
+        uint256 baseBalance = getBaseTokenBalance();
 
+        // Limit swap size to prevent price manipulation and excessive slippage by restricting
+        // trades to a small percentage of total pool liquidity
+        uint256 maxSwapAmount = (quoteBalance * MAX_SWAP_AMOUNT_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
+        if (quoteAmount > maxSwapAmount) {
+            revert SwapAmountTooLarge(quoteAmount, maxSwapAmount);
+        }
+
+        uint256 baseBought = getAmountOfTokens(quoteAmount, quoteBalance, baseBalance);
+
+        // check for zero output amount, this can happen if the swap amount is too large and rounding issues
+        if (baseBought == 0) revert InvalidTokenAmount(baseBought);
         if (baseBought < minBaseAmount) revert SlippageExceeded();
 
         // Effects before interactions
