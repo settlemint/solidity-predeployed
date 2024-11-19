@@ -13,10 +13,10 @@ import { TimelockController } from "@openzeppelin/contracts/governance/TimelockC
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 /// @notice This contract implements a constant product automated market maker (AMM) where the product
-/// @dev Only provides basic emergency withdrawal functionality by pausing the contract and allowing
-/// @dev users to liquidate their positions. More sophisticated emergency handling may be needed.
 /// of the two token reserves remains constant after each trade (x * y = k). When adding or removing
 /// liquidity, the ratio of tokens must match the current price ratio to maintain price stability.
+/// @dev Only provides basic emergency withdrawal functionality by pausing the contract and allowing
+/// users to liquidate their positions. More sophisticated emergency handling may be needed.
 contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -43,6 +43,11 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     error EmergencyWithdrawAlreadyInitiated();
     error NoLiquidityToClaim();
     error ZeroTotalSupply();
+    error NoFeesToCollect();
+    error BelowMinimumCollectionAmount();
+    error FeeCollectorNotSet();
+    error EmergencyWithdrawNotInitiated();
+    error InvalidToken();
 
     event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount, uint256 liquidity);
     event Burn(address indexed sender, uint256 baseAmount, uint256 quoteAmount, address indexed to, uint256 liquidity);
@@ -64,24 +69,29 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 trackedQuoteBalance
     );
     event EmergencyWithdrawExecuted(address indexed user, uint256 baseAmount, uint256 quoteAmount, uint256 lpBalance);
+    event FeesAccrue(address indexed user, uint256 baseFee, uint256 quoteFee);
+    event FeesAccrued(address indexed user, uint256 baseFeesInBasisPoints, uint256 quoteFeesInBasisPoints);
+    event FeesCollected(address indexed user, uint256 baseAmount, uint256 quoteAmount);
+    event ProtocolFeesCollected(uint256 baseAmount, uint256 quoteAmount);
+    event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
+    event TokenRecovered(address indexed token, uint256 amount);
+    event ETHReceived(uint256 amount);
 
     address public immutable baseToken;
     address public immutable quoteToken;
     TimelockController public immutable timelock;
 
-    /// @notice Fee charged on swaps, denominated in basis points (1/10th of a percent)
-    /// @dev Basis points are used instead of percentages to avoid floating point arithmetic,
-    /// which is error-prone and gas-intensive in Solidity. 1 basis point = 0.01%
-    uint256 public swapFeeInBasisPoints;
     /// @notice Maximum allowed swap amount as a percentage of total reserves
     /// @dev This limit prevents large trades that could significantly impact price or drain the pool.
     /// The value 30 represents 3% (30/1000) of the pool's reserves as the maximum single swap size.
     uint256 public constant MAX_SWAP_AMOUNT_IN_BASIS_POINTS = 30;
+
     /// @notice Denominator used for basis point calculations (1000 = 100%)
     /// @dev Using basis points with integer math provides precise fee calculations while
     /// avoiding floating point operations. The denominator of 1000 allows for fees to be
     /// specified with 0.1% granularity (e.g. 5 = 0.5%, 10 = 1%)
     uint256 public constant BASIS_POINTS_DENOMINATOR = 1000;
+
     /// @notice Minimum liquidity that must be maintained in the pool to prevent manipulation
     /// @dev This minimum liquidity is permanently locked in the pool and can never be withdrawn.
     /// It prevents the first liquidity provider from manipulating prices by withdrawing almost
@@ -89,18 +99,37 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// reserves, tiny trades could cause massive price swings. The locked minimum liquidity
     /// ensures there's always some baseline reserves to maintain price stability.
     uint256 private constant MINIMUM_LIQUIDITY = 1000;
+
     /// @notice Maximum allowed difference between tracked and actual token balances based on BASIS_POINTS_DENOMINATOR
     /// @dev Value of 100 represents 10% of BASIS_POINTS_DENOMINATOR (1000), allowing for a 10% tolerance in balance
     /// tracking
     uint256 private constant AMOUNT_TOLERANCE = 100;
+
     /// @notice Maximum token amount that can be used in a single operation
     uint256 public constant MAX_TOKEN_AMOUNT = type(uint128).max;
 
-    uint256 private _trackedBaseBalance;
-    uint256 private _trackedQuoteBalance;
+    /// @notice Percentage of fees that go to the protocol (10%)
+    uint256 private constant PROTOCOL_FEE_SHARE_IN_BASIS_POINTS = 100;
+
+    /// @notice Minimum amount required for fee collection
+    uint256 private constant MINIMUM_COLLECTION_AMOUNT = 1000;
+
+    /// @notice Fee charged on swaps, denominated in basis points (1/10th of a percent)
+    /// @dev Basis points are used instead of percentages to avoid floating point arithmetic,
+    /// which is error-prone and gas-intensive in Solidity. 1 basis point = 0.01%
+    uint256 public swapFeeInBasisPoints;
 
     /// @notice Flag to track if emergency withdrawal has been initiated
     bool public emergencyWithdrawInitiated;
+
+    /// @notice track owed fees
+    uint256 public protocolBaseFeesInBasisPoints;
+    uint256 public protocolQuoteFeesInBasisPoints;
+    mapping(address => uint256) public baseFeesOwedInBasisPoints;
+    mapping(address => uint256) public quoteFeesOwedInBasisPoints;
+
+    uint256 private _trackedBaseBalance;
+    uint256 private _trackedQuoteBalance;
 
     /// @notice Snapshot of balances and supply when emergency was initiated
     uint256 private _emergencyTotalSupply;
@@ -171,6 +200,12 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @dev Can only be called by accounts with ADMIN_ROLE
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
+    }
+
+    /// @notice Returns the owner of the contract
+    /// @return The address of the contract owner
+    function owner() public view returns (address) {
+        return getRoleMember(DEFAULT_ADMIN_ROLE, 0);
     }
 
     /// @notice Allows transferring admin rights in emergency
@@ -261,9 +296,9 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
             // Calculate acceptable range using AMOUNT_TOLERANCE
             uint256 lowerBound =
-                (expectedQuoteAmount * (BASE_POINTS_DENOMINATOR - AMOUNT_TOLERANCE)) / BASE_POINTS_DENOMINATOR;
+                (expectedQuoteAmount * (BASIS_POINTS_DENOMINATOR - AMOUNT_TOLERANCE)) / BASIS_POINTS_DENOMINATOR;
             uint256 upperBound =
-                (expectedQuoteAmount * (BASE_POINTS_DENOMINATOR + AMOUNT_TOLERANCE)) / BASE_POINTS_DENOMINATOR;
+                (expectedQuoteAmount * (BASIS_POINTS_DENOMINATOR + AMOUNT_TOLERANCE)) / BASIS_POINTS_DENOMINATOR;
 
             // Ensure provided quote amount maintains price ratio within tolerance
             if (quoteAmount < lowerBound || quoteAmount > upperBound) {
@@ -350,54 +385,6 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         return (baseAmount, quoteAmount);
     }
 
-    /// @notice Calculates the output amount of tokens for a given input amount and reserves
-    /// @dev Uses constant product formula (k = x * y) to maintain balanced reserves,
-    ///      where k is the invariant liquidity parameter and x,y are the token reserves.
-    ///      The formula ensures that after any swap, the product of the reserves remains constant.
-    /// @param inputAmount The amount of input tokens to swap
-    /// @param inputReserve The current reserve of input tokens
-    /// @param outputReserve The current reserve of output tokens
-    /// @return The amount of output tokens that will be received
-    function getAmountOfTokens(
-        uint256 inputAmount,
-        uint256 inputReserve,
-        uint256 outputReserve
-    )
-        public
-        view
-        returns (uint256)
-    {
-        if (inputReserve == 0 || outputReserve == 0) revert InvalidReserves();
-        if (inputAmount == 0) revert ZeroAmount();
-
-        // Calculate net input amount after the fee is deducted
-        uint256 netInputAmountAfterFeeInBasisPoints = inputAmount * (BASIS_POINTS_DENOMINATOR - swapFeeInBasisPoints);
-
-        // Calculate the numerator and denominator for the output amount
-        // Based on the constant product formula: k = inputReserve * outputReserve
-        // 1. The constant k (liquidity) remains the same before and after the trade:
-        //    k = inputReserve * outputReserve = (inputReserve + netInputAmount) * (outputReserve - outputAmount)
-        // 2. Rearrange to isolate (outputReserve - outputAmount):
-        //    (inputReserve * outputReserve) / (inputReserve + netInputAmount) = outputReserve - outputAmount
-        // 3. Solve for outputAmount:
-        //    outputAmount = outputReserve - (inputReserve * outputReserve) / (inputReserve + netInputAmount)
-        // 4. Multiply both sides by (inputReserve + netInputAmount) to eliminate the denominator:
-        //    outputAmount * (inputReserve + netInputAmount) = outputReserve * (inputReserve + netInputAmount) -
-        //    inputReserve * outputReserve
-        // 5. Factor out outputReserve on the right-hand side:
-        //    outputAmount * (inputReserve + netInputAmount) = outputReserve * netInputAmount
-        // 6. Divide both sides by (inputReserve + netInputAmount) to isolate outputAmount:
-        //    outputAmount = (outputReserve * netInputAmount) / (inputReserve + netInputAmount)
-        // 7. Final formula:
-        //    outputAmount = (outputReserve * netInputAmount) / (inputReserve + netInputAmount)
-        uint256 numerator = netInputAmountAfterFeeInBasisPoints * outputReserve;
-        uint256 denominator = (inputReserve * BASIS_POINTS_DENOMINATOR) + netInputAmountAfterFeeInBasisPoints;
-
-        unchecked {
-            return numerator / denominator;
-        }
-    }
-
     /// @notice Swaps base tokens for quote tokens with slippage protection and deadline
     /// @param baseAmount Amount of base tokens to swap in, should be less than max swap amount
     /// @param minQuoteAmount Minimum amount of quote tokens expected out to protect against slippage
@@ -418,23 +405,20 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 baseBalance = getBaseTokenBalance();
         uint256 quoteBalance = getQuoteTokenBalance();
 
-        // Limit swap size to prevent price manipulation and excessive slippage by restricting
-        // trades to a small percentage of total pool liquidity
         uint256 maxSwapAmount = (baseBalance * MAX_SWAP_AMOUNT_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
         if (baseAmount > maxSwapAmount) {
             revert SwapAmountTooLarge(baseAmount, maxSwapAmount);
         }
 
-        uint256 quoteBought = getAmountOfTokens(baseAmount, baseBalance, quoteBalance);
+        // Get net amount after fees
+        (uint256 netBaseAmount,) = _handleFees(baseAmount, 0);
+        uint256 quoteBought = _getAmountOfTokens(baseBalance, quoteBalance, netBaseAmount);
 
-        // check for zero output amount, this can happen if the swap amount is too large and rounding issues
         if (quoteBought == 0) revert InvalidTokenAmount(quoteBought);
         if (quoteBought < minQuoteAmount) revert SlippageExceeded();
 
-        // Effects before interactions
         emit Swap(msg.sender, baseAmount, 0, 0, quoteBought, msg.sender);
 
-        // Interactions last
         IERC20(baseToken).safeTransferFrom(msg.sender, address(this), baseAmount);
         _trackedBaseBalance += baseAmount;
         IERC20(quoteToken).safeTransfer(msg.sender, quoteBought);
@@ -461,23 +445,20 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 quoteBalance = getQuoteTokenBalance();
         uint256 baseBalance = getBaseTokenBalance();
 
-        // Limit swap size to prevent price manipulation and excessive slippage by restricting
-        // trades to a small percentage of total pool liquidity
         uint256 maxSwapAmount = (quoteBalance * MAX_SWAP_AMOUNT_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
         if (quoteAmount > maxSwapAmount) {
             revert SwapAmountTooLarge(quoteAmount, maxSwapAmount);
         }
 
-        uint256 baseBought = getAmountOfTokens(quoteAmount, quoteBalance, baseBalance);
+        // Get net amount after fees
+        (, uint256 netQuoteAmount) = _handleFees(0, quoteAmount);
+        uint256 baseBought = _getAmountOfTokens(quoteBalance, baseBalance, netQuoteAmount);
 
-        // check for zero output amount, this can happen if the swap amount is too large and rounding issues
         if (baseBought == 0) revert InvalidTokenAmount(baseBought);
         if (baseBought < minBaseAmount) revert SlippageExceeded();
 
-        // Effects before interactions
         emit Swap(msg.sender, 0, quoteAmount, baseBought, 0, msg.sender);
 
-        // Interactions last
         IERC20(quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount);
         _trackedQuoteBalance += quoteAmount;
         IERC20(baseToken).safeTransfer(msg.sender, baseBought);
@@ -518,11 +499,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         emergencyWithdrawInitiated = true;
 
         emit EmergencyWithdrawInitiated(
-            totalLPSupply,
-            _emergencyBaseBalance,
-            _emergencyQuoteBalance,
-            _trackedBaseBalance, // Include tracked balances in event for transparency
-            _trackedQuoteBalance
+            totalLPSupply, _emergencyBaseBalance, _emergencyQuoteBalance, _trackedBaseBalance, _trackedQuoteBalance
         );
     }
 
@@ -562,6 +539,93 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         payable(owner()).transfer(address(this).balance);
     }
 
+    /// @notice Allows users to collect their accumulated trading fees
+    /// @dev Converts fee basis points to actual token amounts and transfers them to the user
+    /// @dev Requires minimum collection amounts to prevent dust transactions
+    /// @dev Resets user's fee tracking after successful collection
+    /// @return baseAmount The amount of base tokens collected as fees
+    /// @return quoteAmount The amount of quote tokens collected as fees
+    function collectFees() external nonReentrant returns (uint256 baseAmount, uint256 quoteAmount) {
+        uint256 baseFeesInBasisPoints = baseFeesOwedInBasisPoints[msg.sender];
+        uint256 quoteFeesInBasisPoints = quoteFeesOwedInBasisPoints[msg.sender];
+
+        if (baseFeesInBasisPoints == 0 && quoteFeesInBasisPoints == 0) revert NoFeesToCollect();
+
+        // Convert basis points to actual amounts
+        baseAmount = baseFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+        quoteAmount = quoteFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+
+        // Ensure minimum collection amounts - allow collection if either amount meets minimum
+        if (baseAmount < MINIMUM_COLLECTION_AMOUNT && quoteAmount < MINIMUM_COLLECTION_AMOUNT) {
+            revert BelowMinimumCollectionAmount();
+        }
+
+        // Reset and Transfer fees
+        if (baseAmount >= MINIMUM_COLLECTION_AMOUNT) {
+            baseFeesOwedInBasisPoints[msg.sender] = 0;
+            IERC20(baseToken).safeTransfer(msg.sender, baseAmount);
+        }
+        if (quoteAmount >= MINIMUM_COLLECTION_AMOUNT) {
+            quoteFeesOwedInBasisPoints[msg.sender] = 0;
+            IERC20(quoteToken).safeTransfer(msg.sender, quoteAmount);
+        }
+
+        emit FeesCollected(msg.sender, baseAmount, quoteAmount);
+        return (baseAmount, quoteAmount);
+    }
+
+    /// @notice Allows admin to collect accumulated protocol fees
+    /// @dev Can only be called by accounts with ADMIN_ROLE
+    /// @dev Protocol fees are tracked in basis points and converted to actual token amounts on collection
+    /// @dev Resets protocol fee tracking after successful collection
+    /// @return baseAmount The amount of base tokens collected as protocol fees
+    /// @return quoteAmount The amount of quote tokens collected as protocol fees
+    function collectProtocolFees()
+        external
+        nonReentrant
+        onlyRole(ADMIN_ROLE)
+        returns (uint256 baseAmount, uint256 quoteAmount)
+    {
+        uint256 baseFeesInBasisPoints = protocolBaseFeesInBasisPoints;
+        uint256 quoteFeesInBasisPoints = protocolQuoteFeesInBasisPoints;
+
+        if (baseFeesInBasisPoints == 0 && quoteFeesInBasisPoints == 0) revert NoFeesToCollect();
+
+        // Convert basis points to actual token amounts
+        baseAmount = baseFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+        quoteAmount = quoteFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+
+        // Reset protocol fees tracking
+        protocolBaseFeesInBasisPoints = 0;
+        protocolQuoteFeesInBasisPoints = 0;
+
+        // Transfer collected fees
+        if (baseAmount > 0) {
+            IERC20(baseToken).safeTransfer(msg.sender, baseAmount);
+        }
+        if (quoteAmount > 0) {
+            IERC20(quoteToken).safeTransfer(msg.sender, quoteAmount);
+        }
+
+        emit ProtocolFeesCollected(baseAmount, quoteAmount);
+        return (baseAmount, quoteAmount);
+    }
+
+    /// @notice Returns the pending fees for a given user that can be collected
+    /// @dev Converts fee amounts from basis points to actual token amounts by dividing by BASIS_POINTS_DENOMINATOR
+    /// @param user The address of the user to check pending fees for
+    /// @return baseAmount The amount of base tokens available to collect as fees
+    /// @return quoteAmount The amount of quote tokens available to collect as fees
+    function getPendingFees(address user) external view returns (uint256 baseAmount, uint256 quoteAmount) {
+        uint256 baseFeesInBasisPoints = baseFeesOwedInBasisPoints[user];
+        uint256 quoteFeesInBasisPoints = quoteFeesOwedInBasisPoints[user];
+
+        baseAmount = baseFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+        quoteAmount = quoteFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+
+        return (baseAmount, quoteAmount);
+    }
+
     /// @notice Calculates the amount of quote tokens that would be received for a given amount of base tokens
     /// @dev Uses the constant product formula (x * y = k) to calculate the exchange rate
     /// @param baseAmount The amount of base tokens to swap
@@ -569,15 +633,15 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @custom:throws InvalidReserves if either token balance is 0
     /// @custom:throws ZeroAmount if baseAmount is 0
     function getBaseToQuotePrice(uint256 baseAmount) external view returns (uint256) {
-        // Get current balances of both tokens in the pool
+        if (baseAmount == 0) revert ZeroAmount();
+
         uint256 baseBalance = getBaseTokenBalance();
         uint256 quoteBalance = getQuoteTokenBalance();
 
-        // Revert if pool has no liquidity or if input amount is 0
         if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
-        if (baseAmount == 0) revert ZeroAmount();
 
-        return getAmountOfTokens(baseAmount, baseBalance, quoteBalance);
+        (uint256 netBaseAmount,,) = _calculateNetAmount(baseAmount);
+        return _getAmountOfTokens(baseBalance, quoteBalance, netBaseAmount);
     }
 
     /// @notice Calculates the amount of base tokens that would be received for a given amount of quote tokens
@@ -587,15 +651,15 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @custom:throws InvalidReserves if either token balance is 0
     /// @custom:throws ZeroAmount if quoteAmount is 0
     function getQuoteToBasePrice(uint256 quoteAmount) external view returns (uint256) {
-        // Get current balances of both tokens in the pool
+        if (quoteAmount == 0) revert ZeroAmount();
+
         uint256 baseBalance = getBaseTokenBalance();
         uint256 quoteBalance = getQuoteTokenBalance();
 
-        // Revert if pool has no liquidity or if input amount is 0
         if (baseBalance == 0 || quoteBalance == 0) revert InvalidReserves();
-        if (quoteAmount == 0) revert ZeroAmount();
 
-        return getAmountOfTokens(quoteAmount, quoteBalance, baseBalance);
+        (uint256 netQuoteAmount,,) = _calculateNetAmount(quoteAmount);
+        return _getAmountOfTokens(quoteBalance, baseBalance, netQuoteAmount);
     }
 
     /// @notice Verifies that the actual token balances match the tracked balances within tolerance
@@ -618,6 +682,98 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @dev Internal view function used as a guard against balance tracking errors
     function requireValidBalances() internal view {
         if (!verifyBalances()) revert BalanceMismatch();
+    }
+
+    /// @notice Calculates the output amount of tokens for a given input amount and reserves
+    /// @dev Uses constant product formula (k = x * y) accounting for fees
+    /// @param netInputAmount The input amount after fees have been deducted
+    /// @param inputReserve The current reserve of input tokens
+    /// @param outputReserve The current reserve of output tokens
+    /// @return The amount of output tokens that will be received
+    function _getAmountOfTokens(
+        uint256 netInputAmount,
+        uint256 inputReserve,
+        uint256 outputReserve
+    )
+        internal
+        pure
+        returns (uint256)
+    {
+        if (inputReserve == 0 || outputReserve == 0) revert InvalidReserves();
+        if (netInputAmount == 0) revert ZeroAmount();
+
+        uint256 numerator = netInputAmount * outputReserve;
+        uint256 denominator = inputReserve + netInputAmount;
+
+        unchecked {
+            return numerator / denominator;
+        }
+    }
+
+    /// @notice Calculates the net amount and fees without distributing them
+    /// @dev Pure function that can be used by both views and internal functions
+    /// @param amount The amount to calculate fees for
+    /// @return netAmount The amount after fees are deducted
+    /// @return lpFees The fee amount for LPs
+    /// @return protocolFees The fee amount for protocol
+    function _calculateNetAmount(uint256 amount)
+        internal
+        pure
+        returns (uint256 netAmount, uint256 lpFees, uint256 protocolFees)
+    {
+        if (amount == 0) return (0, 0, 0);
+
+        uint256 feeTotal = amount * swapFeeInBasisPoints;
+        protocolFees = (feeTotal * PROTOCOL_FEE_SHARE_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
+        lpFees = feeTotal - protocolFees;
+        netAmount = amount - ((lpFees + protocolFees) / BASIS_POINTS_DENOMINATOR);
+
+        return (netAmount, lpFees, protocolFees);
+    }
+
+    /// @notice Calculates and distributes trading fees between LPs and protocol
+    /// @param baseAmount The amount of base tokens to calculate fees for
+    /// @param quoteAmount The amount of quote tokens to calculate fees for
+    /// @return netBaseAmount The base token amount after fees are deducted
+    /// @return netQuoteAmount The quote token amount after fees are deducted
+    function _handleFees(
+        uint256 baseAmount,
+        uint256 quoteAmount
+    )
+        internal
+        returns (uint256 netBaseAmount, uint256 netQuoteAmount)
+    {
+        // Calculate all amounts and fees at once
+        (netBaseAmount, uint256 baseLpFees, uint256 baseProtocolFees) = _calculateNetAmount(baseAmount);
+        (netQuoteAmount, uint256 quoteLpFees, uint256 quoteProtocolFees) = _calculateNetAmount(quoteAmount);
+
+        // Update protocol fee tracking
+        if (baseAmount > 0) {
+            protocolBaseFeesInBasisPoints += baseProtocolFees;
+        }
+        if (quoteAmount > 0) {
+            protocolQuoteFeesInBasisPoints += quoteProtocolFees;
+        }
+
+        // Distribute LP fees if there are LP token holders
+        uint256 totalLPSupply = totalSupply();
+        if (totalLPSupply > 0 && (baseLpFees > 0 || quoteLpFees > 0)) {
+            uint256 userLPShare = balanceOf(msg.sender) / totalLPSupply;
+
+            if (baseLpFees > 0) {
+                uint256 baseUserFeeShare = baseLpFees * userLPShare;
+                baseFeesOwedInBasisPoints[msg.sender] += baseUserFeeShare;
+            }
+
+            if (quoteLpFees > 0) {
+                uint256 quoteUserFeeShare = quoteLpFees * userLPShare;
+                quoteFeesOwedInBasisPoints[msg.sender] += quoteUserFeeShare;
+            }
+
+            emit FeesAccrued(msg.sender, baseLpFees, quoteLpFees);
+        }
+
+        return (netBaseAmount, netQuoteAmount);
     }
 
     /// @notice Returns the absolute difference between two uint256 values
