@@ -227,7 +227,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @notice Returns the owner of the contract
     /// @return The address of the contract owner
     function owner() public view returns (address) {
-        return getRoleMember(DEFAULT_ADMIN_ROLE, 0);
+        return AccessControl.getRoleMember(DEFAULT_ADMIN_ROLE, 0);
     }
 
     /// @notice Allows transferring admin rights in emergency
@@ -566,8 +566,8 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         _burn(msg.sender, lpBalance);
 
         // Reset fee tracking
-        if (baseFees > 0) userBaseFeeEntitlement[msg.sender] = 0;
-        if (quoteFees > 0) userQuoteFeeEntitlement[msg.sender] = 0;
+        if (baseFeesToClaim > 0) userBaseFeeEntitlement[msg.sender] = 0;
+        if (quoteFeesToClaim > 0) userQuoteFeeEntitlement[msg.sender] = 0;
 
         // Transfer tokens to user
         IERC20(baseToken).safeTransfer(msg.sender, baseShare);
@@ -658,7 +658,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         if (baseFeesToClaim > 0) {
             IERC20(baseToken).safeTransfer(msg.sender, baseFeesToClaim);
         }
-        if (quoteAmount > 0) {
+        if (quoteFeesToClaim > 0) {
             IERC20(quoteToken).safeTransfer(msg.sender, quoteFeesToClaim);
         }
 
@@ -825,8 +825,8 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         returns (uint256 netBaseAmount, uint256 netQuoteAmount)
     {
         // Calculate all amounts and fees at once
-        (uint256 netBaseAmount, uint256 baseLpFees, uint256 baseProtocolFees) = _calculateNetAmount(baseAmount);
-        (uint256 netQuoteAmount, uint256 quoteLpFees, uint256 quoteProtocolFees) = _calculateNetAmount(quoteAmount);
+        (netBaseAmount, uint256 baseLpFees, uint256 baseProtocolFees) = _calculateNetAmount(baseAmount);
+        (netQuoteAmount, uint256 quoteLpFees, uint256 quoteProtocolFees) = _calculateNetAmount(quoteAmount);
 
         if (baseProtocolFees > 0) {
             protocolBaseFees += baseProtocolFees;
