@@ -638,7 +638,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     /// @dev Protocol fees are tracked in basis points and converted to actual token amounts on collection
     /// @dev Resets protocol fee tracking after successful collection
     /// @return baseFeesClaimed The amount of base tokens collected as protocol fees
-    /// @return quoteFeesToClaim The amount of quote tokens collected as protocol fees
+    /// @return quoteFeesClaimed The amount of quote tokens collected as protocol fees
     function collectProtocolFees()
         external
         nonReentrant
@@ -746,7 +746,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     /// @param netInputAmount The input amount after fees have been deducted
     /// @param inputReserve The current reserve of input tokens
     /// @param outputReserve The current reserve of output tokens
-    /// @return The amount of output tokens that will be received
+    /// @return outputAmount The amount of output tokens that will be received
     function _getAmountOfTokens(
         uint256 netInputAmount,
         uint256 inputReserve,
