@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
-import { AccessControlEnumerable } from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
@@ -17,7 +17,7 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 /// liquidity, the ratio of tokens must match the current price ratio to maintain price stability.
 /// @dev Only provides basic emergency withdrawal functionality by pausing the contract and allowing
 /// users to liquidate their positions. More sophisticated emergency handling may be needed.
-contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Pausable, ReentrancyGuard {
+contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -224,12 +224,6 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     /// @dev Can only be called by accounts with ADMIN_ROLE
     function unpause() external onlyRole(ADMIN_ROLE) {
         _unpause();
-    }
-
-    /// @notice Returns the owner of the contract
-    /// @return The address of the contract owner
-    function owner() public view returns (address) {
-        return getRoleMember(DEFAULT_ADMIN_ROLE, 0);
     }
 
     /// @notice Allows transferring admin rights in emergency
@@ -592,8 +586,11 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     function emergencyETHWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
         uint256 balance = address(this).balance;
         if (balance == 0) revert ZeroAmount();
-        (bool success,) = payable(msg.sender).call{ value: balance }("");
-        if (!success) revert EmergencyETHTransferFailed();
+
+        // Use transfer instead of call to prevent reentrancy and limit gas
+        // Only admins can call this function so we know msg.sender is trusted
+        payable(msg.sender).transfer(balance);
+
         emit EmergencyETHWithdraw(msg.sender, balance);
     }
 
