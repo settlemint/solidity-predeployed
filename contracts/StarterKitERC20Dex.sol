@@ -51,6 +51,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     error MaxTotalSupplyExceeded();
     error DivisionByZero();
     error ZeroOutputAmount();
+    error EmergencyETHTransferFailed();
 
     event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount, uint256 liquidity);
     event Burn(address indexed sender, uint256 baseAmount, uint256 quoteAmount, address indexed to, uint256 liquidity);
@@ -77,6 +78,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
     event TokenRecovered(address indexed token, uint256 amount);
     event ETHReceived(uint256 amount);
+    event EmergencyETHWithdraw(address indexed user, uint256 amount);
 
     address public immutable baseToken;
     address public immutable quoteToken;
@@ -586,8 +588,13 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     /// @notice Allows admin to withdraw any ETH accidentally sent to the contract
     /// @dev Can only be called by accounts with ADMIN_ROLE
     /// @dev Transfers entire ETH balance to the contract owner
-    function emergencyETHWithdraw() external onlyRole(ADMIN_ROLE) {
-        payable(owner()).transfer(address(this).balance);
+    /// @dev Emits EmergencyWithdraw event on successful withdrawal
+    function emergencyETHWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
+        uint256 balance = address(this).balance;
+        if (balance == 0) revert ZeroAmount();
+        (bool success,) = payable(msg.sender).call{ value: balance }("");
+        if (!success) revert EmergencyETHTransferFailed();
+        emit EmergencyETHWithdraw(msg.sender, balance);
     }
 
     /// @notice Allows users to collect their accumulated trading fees
