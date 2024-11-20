@@ -825,8 +825,8 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         returns (uint256 netBaseAmount, uint256 netQuoteAmount)
     {
         // Calculate all amounts and fees at once
-        (netBaseAmount, uint256 baseLpFees, uint256 baseProtocolFees) = _calculateNetAmount(baseAmount);
-        (netQuoteAmount, uint256 quoteLpFees, uint256 quoteProtocolFees) = _calculateNetAmount(quoteAmount);
+        (netBaseAmount, baseLpFees, baseProtocolFees) = _calculateNetAmount(baseAmount);
+        (netQuoteAmount, quoteLpFees, quoteProtocolFees) = _calculateNetAmount(quoteAmount);
 
         if (baseAmount > 0) {
             protocolBaseFees += baseProtocolFees;
