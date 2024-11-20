@@ -20,7 +20,7 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
     error SameTokenAddress(address token);
     error InvalidReserves();
@@ -201,7 +201,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         swapFeeInBasisPoints = _initialFeeInBasisPoints;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(ADMIN_ROLE, _admin);
+        _grantRole(OPERATOR_ROLE, _admin);
 
         // Create a new TimelockController contract that adds a 2-day delay to certain administrative actions (like fee
         // changes).
@@ -215,23 +215,23 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     }
 
     /// @notice Pauses all token transfers and swaps
-    /// @dev Can only be called by accounts with ADMIN_ROLE
-    function pause() external onlyRole(ADMIN_ROLE) {
+    /// @dev Can only be called by accounts with DEFAULT_ADMIN_ROLE
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
 
     /// @notice Unpauses all token transfers and swaps
-    /// @dev Can only be called by accounts with ADMIN_ROLE
-    function unpause() external onlyRole(ADMIN_ROLE) {
+    /// @dev Can only be called by accounts with DEFAULT_ADMIN_ROLE
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
 
     /// @notice Allows transferring admin rights in emergency
-    function transferEmergencyAdmin(address newAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function transferOperator(address newAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (msg.sender != address(timelock)) revert UnauthorizedTimelock();
 
-        _revokeRole(ADMIN_ROLE, msg.sender);
-        _grantRole(ADMIN_ROLE, newAdmin);
+        _revokeRole(OPERATOR_ROLE, msg.sender);
+        _grantRole(OPERATOR_ROLE, newAdmin);
         emit AdminTransferred(msg.sender, newAdmin);
     }
 
@@ -500,9 +500,9 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     }
 
     /// @notice Allows recovery of tokens that are not part of the trading pair
-    /// @dev Only callable by admin role
+    /// @dev Only callable by operator role
     /// @param token The address of the token to recover (must not be base or quote token)
-    function recoverUnusedTokens(address token) external nonReentrant onlyRole(ADMIN_ROLE) {
+    function recoverUnusedTokens(address token) external nonReentrant onlyRole(OPERATOR_ROLE) {
         if (token == address(0)) revert ZeroAddress();
         if (token == baseToken || token == quoteToken) revert InvalidToken();
 
@@ -515,7 +515,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
     /// @notice Initiates emergency shutdown and enables LP holders to withdraw their share
     /// @dev Pauses contract and snapshots current state for withdrawals
-    function initiateEmergencyWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
+    function initiateEmergencyWithdraw() external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         if (emergencyWithdrawInitiated) revert EmergencyWithdrawAlreadyInitiated();
 
         uint256 totalLPSupply = totalSupply();
@@ -576,20 +576,21 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @dev Emits ETHReceived event with the received amount
     /// @dev This is needed since the contract may receive ETH by accident or through selfdestruct
     receive() external payable {
+        if (msg.value == 0) revert ZeroAmount();
+
         emit ETHReceived(msg.value);
     }
 
     /// @notice Allows admin to withdraw any ETH accidentally sent to the contract
-    /// @dev Can only be called by accounts with ADMIN_ROLE
+    /// @dev Can only be called by accounts with DEFAULT_ADMIN_ROLE
     /// @dev Transfers entire ETH balance to the contract owner
     /// @dev Emits EmergencyWithdraw event on successful withdrawal
-    function emergencyETHWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
+    function emergencyETHWithdraw() external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 balance = address(this).balance;
         if (balance <= 0) revert ZeroAmount();
 
-        // Use transfer instead of call to prevent reentrancy and limit gas
-        // Only admins can call this function so we know msg.sender is trusted
-        payable(msg.sender).transfer(balance);
+        (bool success,) = payable(msg.sender).call{ value: balance }("");
+        if (!success) revert EmergencyETHTransferFailed();
 
         emit EmergencyETHWithdraw(msg.sender, balance);
     }
@@ -638,7 +639,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     }
 
     /// @notice Allows admin to collect accumulated protocol fees
-    /// @dev Can only be called by accounts with ADMIN_ROLE
+    /// @dev Can only be called by accounts with OPERATOR_ROLE
     /// @dev Protocol fees are tracked in basis points and converted to actual token amounts on collection
     /// @dev Resets protocol fee tracking after successful collection
     /// @return baseFeesClaimed The amount of base tokens collected as protocol fees
@@ -646,7 +647,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     function collectProtocolFees()
         external
         nonReentrant
-        onlyRole(ADMIN_ROLE)
+        onlyRole(OPERATOR_ROLE)
         returns (uint256 baseFeesClaimed, uint256 quoteFeesClaimed)
     {
         uint256 baseFeesToClaim = protocolBaseFees;
