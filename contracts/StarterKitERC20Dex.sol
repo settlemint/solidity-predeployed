@@ -670,17 +670,14 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     /// @notice Returns the pending fees for a given user that can be collected
     /// @dev Converts fee amounts from basis points to actual token amounts by dividing by BASIS_POINTS_DENOMINATOR
     /// @param user The address of the user to check pending fees for
-    /// @return baseAmount The amount of base tokens available to collect as fees
-    /// @return quoteAmount The amount of quote tokens available to collect as fees
-    function getPendingFees(address user) external view returns (uint256 baseAmount, uint256 quoteAmount) {
+    /// @return pendingBaseFees The amount of base tokens available to collect as fees
+    /// @return pendingQuoteFees The amount of quote tokens available to collect as fees
+    function getPendingFees(address user) external view returns (uint256 pendingBaseFees, uint256 pendingQuoteFees) {
         if (user == address(0)) revert ZeroAddress();
 
-        _updateUserFeeEntitlement(user);
+        (pendingBaseFees, pendingQuoteFees) = _calculatePendingFees(user);
 
-        baseAmount = userBaseFeeEntitlement[user];
-        quoteAmount = userQuoteFeeEntitlement[user];
-
-        return (baseAmount, quoteAmount);
+        return (pendingBaseFees, pendingQuoteFees);
     }
 
     /// @notice Calculates the amount of quote tokens that would be received for a given amount of base tokens
@@ -796,7 +793,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
     /// @return protocolFees The fee amount allocated to protocol (10% of total fees)
     function _calculateNetAmount(uint256 amount)
         internal
-        pure
+        view
         returns (uint256 netAmount, uint256 lpFees, uint256 protocolFees)
     {
         if (amount == 0) return (0, 0, 0);
@@ -850,8 +847,9 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
         return (netBaseAmount, netQuoteAmount);
     }
 
-    // Add a function to update user's fee entitlement
-    function _updateUserFeeEntitlement(address user) private {
+    /// @notice Calculates the pending fees for a given user
+    /// @param user The address of the user to calculation to update user's fee entitlement
+    function _calculatePendingFees(address user) private view returns (uint256 baseFees, uint256 quoteFees) {
         uint256 userBalance = balanceOf(user);
         uint256 totalLPSupply = totalSupply();
 
@@ -861,9 +859,18 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
             uint256 quoteFeesSinceLast = totalQuoteFeesAccumulated - userLastQuoteFees[user];
 
             uint256 preciseUserShare = (userBalance * 1e18) / totalLPSupply;
-            userBaseFeeEntitlement[user] += (baseFeesSinceLast * preciseUserShare) / 1e18;
-            userQuoteFeeEntitlement[user] += (quoteFeesSinceLast * preciseUserShare) / 1e18;
+            baseFees = (baseFeesSinceLast * preciseUserShare) / 1e18;
+            quoteFees = (quoteFeesSinceLast * preciseUserShare) / 1e18;
         }
+    }
+
+    /// @notice Updates the user's fee entitlement based on their balance and the accumulated fees
+    /// @param user The address of the user to update the fee entitlement for
+    function _updateUserFeeEntitlement(address user) private {
+        (uint256 pendingBaseFees, uint256 pendingQuoteFees) = _calculatePendingFees(user);
+
+        userBaseFeeEntitlement[user] += pendingBaseFees;
+        userQuoteFeeEntitlement[user] += pendingQuoteFees;
 
         // Update user's last known total fees
         userLastBaseFees[user] = totalBaseFeesAccumulated;
