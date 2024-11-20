@@ -824,7 +824,15 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         returns (uint256 liquidity)
     {
         if (baseAmount == 0 || quoteAmount == 0) revert ZeroAmount();
-        liquidity = Math.sqrt(baseAmount * quoteAmount);
+
+        // Check for multiplication overflow before sqrt
+        uint256 product;
+        unchecked {
+            product = baseAmount * quoteAmount;
+            if (product / baseAmount != quoteAmount) revert MaxTokenAmountExceeded();
+        }
+
+        liquidity = Math.sqrt(product);
         if (liquidity < MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
         return liquidity;
     }
