@@ -241,16 +241,16 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
 
     /// @notice Updates the swap fee for the DEX
     /// @dev Can only be called by the timelock contract to ensure fee changes are time-delayed
-    /// @param _newFeeInBasisPoints The new fee value in basis points (1 basis point = 0.01%)
+    /// @param newFeeInBasisPoints The new fee value in basis points (1 basis point = 0.01%)
     /// @custom:throws UnauthorizedTimelock if caller is not the timelock contract
     /// @custom:throws InvalidFee if the new fee is 0
     /// @custom:throws FeeTooHigh if the new fee exceeds BASIS_POINTS_DENOMINATOR
-    function setSwapFee(uint256 _newFeeInBasisPoints) external {
+    function setSwapFee(uint256 newFeeInBasisPoints) external {
         if (msg.sender != address(timelock)) revert UnauthorizedTimelock();
-        if (_newFeeInBasisPoints == 0) revert InvalidFee(_newFeeInBasisPoints);
-        if (_newFeeInBasisPoints > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(_newFeeInBasisPoints);
-        emit FeeUpdated(swapFeeInBasisPoints, _newFeeInBasisPoints);
-        swapFeeInBasisPoints = _newFeeInBasisPoints;
+        if (newFeeInBasisPoints == 0) revert InvalidFee(newFeeInBasisPoints);
+        if (newFeeInBasisPoints > BASIS_POINTS_DENOMINATOR) revert FeeTooHigh(newFeeInBasisPoints);
+        emit FeeUpdated(swapFeeInBasisPoints, newFeeInBasisPoints);
+        swapFeeInBasisPoints = newFeeInBasisPoints;
     }
 
     /// @notice Returns the current tracked balance of the base token in the DEX
@@ -511,7 +511,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
         if (token == baseToken || token == quoteToken) revert InvalidToken();
 
         uint256 balance = IERC20(token).balanceOf(address(this));
-        if (balance == 0) revert ZeroAmount();
+        if (balance <= 0) revert ZeroAmount();
 
         IERC20(token).safeTransfer(msg.sender, balance);
         emit TokenRecovered(token, balance);
@@ -858,9 +858,8 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControlEnumerable, Paus
             uint256 baseFeesSinceLast = totalBaseFeesAccumulated - userLastBaseFees[user];
             uint256 quoteFeesSinceLast = totalQuoteFeesAccumulated - userLastQuoteFees[user];
 
-            uint256 preciseUserShare = (userBalance * 1e18) / totalLPSupply;
-            baseFees = (baseFeesSinceLast * preciseUserShare) / 1e18;
-            quoteFees = (quoteFeesSinceLast * preciseUserShare) / 1e18;
+            baseFees = (baseFeesSinceLast * userBalance) / totalLPSupply;
+            quoteFees = (quoteFeesSinceLast * userBalance) / totalLPSupply;
         }
     }
 
