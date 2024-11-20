@@ -50,6 +50,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     error TokenDecimalsTooHigh();
     error MaxTotalSupplyExceeded();
     error DivisionByZero();
+    error ZeroOutputAmount();
 
     event Mint(address indexed sender, uint256 baseAmount, uint256 quoteAmount, uint256 liquidity);
     event Burn(address indexed sender, uint256 baseAmount, uint256 quoteAmount, address indexed to, uint256 liquidity);
@@ -753,7 +754,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     )
         internal
         pure
-        returns (uint256)
+        returns (uint256 outputAmount)
     {
         if (inputReserve == 0 || outputReserve == 0) revert InvalidReserves();
         if (netInputAmount == 0) revert ZeroAmount();
@@ -763,9 +764,28 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
         if (denominator == 0) revert DivisionByZero();
 
-        unchecked {
-            return numerator / denominator;
-        }
+        // Calculate the numerator and denominator for the output amount
+        // Based on the constant product formula: k = inputReserve * outputReserve
+        // 1. The constant k (liquidity) remains the same before and after the trade:
+        //    k = inputReserve * outputReserve = (inputReserve + netInputAmount) * (outputReserve - outputAmount)
+        // 2. Rearrange to isolate (outputReserve - outputAmount):
+        //    (inputReserve * outputReserve) / (inputReserve + netInputAmount) = outputReserve - outputAmount
+        // 3. Solve for outputAmount:
+        //    outputAmount = outputReserve - (inputReserve * outputReserve) / (inputReserve + netInputAmount)
+        // 4. Multiply both sides by (inputReserve + netInputAmount) to eliminate the denominator:
+        //    outputAmount * (inputReserve + netInputAmount) = outputReserve * (inputReserve + netInputAmount) -
+        //    inputReserve * outputReserve
+        // 5. Factor out outputReserve on the right-hand side:
+        //    outputAmount * (inputReserve + netInputAmount) = outputReserve * netInputAmount
+        // 6. Divide both sides by (inputReserve + netInputAmount) to isolate outputAmount:
+        //    outputAmount = (outputReserve * netInputAmount) / (inputReserve + netInputAmount)
+        // 7. Final formula:
+        //    outputAmount = (outputReserve * netInputAmount) / (inputReserve + netInputAmount)
+        outputAmount = numerator / denominator;
+
+        if (outputAmount == 0) revert ZeroOutputAmount();
+
+        return outputAmount;
     }
 
     /// @notice Calculates the net amount and fees without distributing them
