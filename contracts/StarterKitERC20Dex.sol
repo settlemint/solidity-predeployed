@@ -534,8 +534,24 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 baseShare = (_emergencyBaseBalance * lpBalance) / _emergencyTotalSupply;
         uint256 quoteShare = (_emergencyQuoteBalance * lpBalance) / _emergencyTotalSupply;
 
+        // Calculate any uncollected fees
+        uint256 baseFeesInBasisPoints = baseFeesOwedInBasisPoints[msg.sender];
+        uint256 quoteFeesInBasisPoints = quoteFeesOwedInBasisPoints[msg.sender];
+
+        // Convert fee basis points to actual amounts
+        uint256 baseFees = baseFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+        uint256 quoteFees = quoteFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+
+        // Add fees to shares
+        baseShare += baseFees;
+        quoteShare += quoteFees;
+
         // Effects before interactions
         _burn(msg.sender, lpBalance);
+
+        // Reset fee tracking
+        if (baseFees > 0) baseFeesOwedInBasisPoints[msg.sender] = 0;
+        if (quoteFees > 0) quoteFeesOwedInBasisPoints[msg.sender] = 0;
 
         // Transfer tokens to user
         IERC20(baseToken).safeTransfer(msg.sender, baseShare);
