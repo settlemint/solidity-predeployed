@@ -45,7 +45,6 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     error ZeroTotalSupply();
     error NoFeesToCollect();
     error BelowMinimumCollectionAmount();
-    error FeeCollectorNotSet();
     error EmergencyWithdrawNotInitiated();
     error InvalidToken();
     error TokenDecimalsTooHigh();
@@ -72,8 +71,6 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         uint256 trackedQuoteBalance
     );
     event EmergencyWithdrawExecuted(address indexed user, uint256 baseAmount, uint256 quoteAmount, uint256 lpBalance);
-    event FeesAccrue(address indexed user, uint256 baseFee, uint256 quoteFee);
-    event FeesAccrued(address indexed user, uint256 baseFeesInBasisPoints, uint256 quoteFeesInBasisPoints);
     event FeesCollected(address indexed user, uint256 baseAmount, uint256 quoteAmount);
     event ProtocolFeesCollected(uint256 baseAmount, uint256 quoteAmount);
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
@@ -123,6 +120,10 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// This delay gives users time to react to proposed changes before they take effect
     uint256 private constant TIMELOCK_DELAY = 2 days;
 
+    /// @notice Minimum share of liquidity provider in basis points
+    /// @dev This constant ensures that even the smallest liquidity provider has a minimum share of 0.1% (1 basis point)
+    uint256 private constant MIN_LP_SHARE_IN_BASIS_POINTS = 1;
+
     /// @notice Fee charged on swaps, denominated in basis points (1/10th of a percent)
     /// @dev Basis points are used instead of percentages to avoid floating point arithmetic,
     /// which is error-prone and gas-intensive in Solidity. 1 basis point = 0.01%
@@ -131,11 +132,21 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @notice Flag to track if emergency withdrawal has been initiated
     bool public emergencyWithdrawInitiated;
 
-    /// @notice track owed fees
-    uint256 public protocolBaseFeesInBasisPoints;
-    uint256 public protocolQuoteFeesInBasisPoints;
-    mapping(address => uint256) public baseFeesOwedInBasisPoints;
-    mapping(address => uint256) public quoteFeesOwedInBasisPoints;
+    /// @notice track protocol owed fees
+    uint256 public protocolBaseFees;
+    uint256 public protocolQuoteFees;
+
+    // Track total accumulated fees
+    uint256 private totalBaseFeesAccumulated;
+    uint256 private totalQuoteFeesAccumulated;
+
+    // Track user's accumulated fee entitlement
+    mapping(address => uint256) private userBaseFeeEntitlement;
+    mapping(address => uint256) private userQuoteFeeEntitlement;
+
+    // Track user's last known total fees
+    mapping(address => uint256) private userLastBaseFees;
+    mapping(address => uint256) private userLastQuoteFees;
 
     uint256 private _trackedBaseBalance;
     uint256 private _trackedQuoteBalance;
@@ -350,6 +361,10 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         // Update tracked balances
         _trackedBaseBalance += baseAmount;
         _trackedQuoteBalance += quoteAmount;
+
+        // Update user's fee entitlement before changing their balance
+        _updateUserFeeEntitlement(msg.sender);
+
         return _liquidity;
     }
 
@@ -400,6 +415,9 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
 
         _trackedBaseBalance -= baseAmount;
         _trackedQuoteBalance -= quoteAmount;
+
+        // Update user's fee entitlement before changing their balance
+        _updateUserFeeEntitlement(msg.sender);
 
         return (baseAmount, quoteAmount);
     }
@@ -527,31 +545,28 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     function withdrawLPEmergency() external nonReentrant whenPaused {
         if (!emergencyWithdrawInitiated) revert EmergencyWithdrawNotInitiated();
 
+        _updateUserFeeEntitlement(msg.sender);
+
         uint256 lpBalance = balanceOf(msg.sender);
-        if (lpBalance == 0) revert NoLiquidityToClaim();
+        uint256 baseFeesToClaim = userBaseFeeEntitlement[msg.sender];
+        uint256 quoteFeesToClaim = userQuoteFeeEntitlement[msg.sender];
+
+        if (lpBalance == 0 && baseFeesToClaim == 0 && quoteFeesToClaim == 0) revert NoLiquidityToClaim();
 
         // Calculate share using actual token balances from emergency initiation
-        uint256 baseShare = (_emergencyBaseBalance * lpBalance) / _emergencyTotalSupply;
-        uint256 quoteShare = (_emergencyQuoteBalance * lpBalance) / _emergencyTotalSupply;
-
-        // Calculate any uncollected fees
-        uint256 baseFeesInBasisPoints = baseFeesOwedInBasisPoints[msg.sender];
-        uint256 quoteFeesInBasisPoints = quoteFeesOwedInBasisPoints[msg.sender];
-
-        // Convert fee basis points to actual amounts
-        uint256 baseFees = baseFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
-        uint256 quoteFees = quoteFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+        uint256 baseShare = lpBalance == 0 ? 0 : (_emergencyBaseBalance * lpBalance) / _emergencyTotalSupply;
+        uint256 quoteShare = lpBalance == 0 ? 0 : (_emergencyQuoteBalance * lpBalance) / _emergencyTotalSupply;
 
         // Add fees to shares
-        baseShare += baseFees;
-        quoteShare += quoteFees;
+        baseShare += baseFeesToClaim;
+        quoteShare += quoteFeesToClaim;
 
         // Effects before interactions
         _burn(msg.sender, lpBalance);
 
         // Reset fee tracking
-        if (baseFees > 0) baseFeesOwedInBasisPoints[msg.sender] = 0;
-        if (quoteFees > 0) quoteFeesOwedInBasisPoints[msg.sender] = 0;
+        if (baseFees > 0) userBaseFeeEntitlement[msg.sender] = 0;
+        if (quoteFees > 0) userQuoteFeeEntitlement[msg.sender] = 0;
 
         // Transfer tokens to user
         IERC20(baseToken).safeTransfer(msg.sender, baseShare);
@@ -578,72 +593,77 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @dev Converts fee basis points to actual token amounts and transfers them to the user
     /// @dev Requires minimum collection amounts to prevent dust transactions
     /// @dev Resets user's fee tracking after successful collection
-    /// @return baseAmount The amount of base tokens collected as fees
-    /// @return quoteAmount The amount of quote tokens collected as fees
-    function collectFees() external nonReentrant returns (uint256 baseAmount, uint256 quoteAmount) {
-        uint256 baseFeesInBasisPoints = baseFeesOwedInBasisPoints[msg.sender];
-        uint256 quoteFeesInBasisPoints = quoteFeesOwedInBasisPoints[msg.sender];
+    /// @return baseFeesClaimed The amount of base tokens collected as fees
+    /// @return quoteFeesClaimed The amount of quote tokens collected as fees
+    function collectFees() external nonReentrant returns (uint256 baseFeesClaimed, uint256 quoteFeesClaimed) {
+        _updateUserFeeEntitlement(msg.sender);
 
-        if (baseFeesInBasisPoints == 0 && quoteFeesInBasisPoints == 0) revert NoFeesToCollect();
+        uint256 baseFeesToClaim = userBaseFeeEntitlement[msg.sender];
+        uint256 quoteFeesToClaim = userQuoteFeeEntitlement[msg.sender];
 
-        // Convert basis points to actual amounts
-        baseAmount = baseFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
-        quoteAmount = quoteFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+        if (baseFeesToClaim == 0 && quoteFeesToClaim == 0) {
+            revert NoFeesToCollect();
+        }
 
-        // Ensure minimum collection amounts - allow collection if either amount meets minimum
-        if (baseAmount < MINIMUM_COLLECTION_AMOUNT && quoteAmount < MINIMUM_COLLECTION_AMOUNT) {
+        // Check minimum collection amounts
+        if (
+            baseFeesToClaim > 0 && baseFeesToClaim < MINIMUM_COLLECTION_AMOUNT && quoteFeesToClaim > 0
+                && quoteFeesToClaim < MINIMUM_COLLECTION_AMOUNT
+        ) {
             revert BelowMinimumCollectionAmount();
         }
 
-        // Reset and Transfer fees
-        if (baseAmount >= MINIMUM_COLLECTION_AMOUNT) {
-            baseFeesOwedInBasisPoints[msg.sender] = 0;
-            IERC20(baseToken).safeTransfer(msg.sender, baseAmount);
-        }
-        if (quoteAmount >= MINIMUM_COLLECTION_AMOUNT) {
-            quoteFeesOwedInBasisPoints[msg.sender] = 0;
-            IERC20(quoteToken).safeTransfer(msg.sender, quoteAmount);
+        // Transfer base token fees if above minimum
+        if (baseFeesToClaim >= MINIMUM_COLLECTION_AMOUNT) {
+            IERC20(baseToken).safeTransfer(msg.sender, baseFeesToClaim);
+            userBaseFeeEntitlement[msg.sender] = 0;
+            baseFeesClaimed = baseFeesToClaim;
         }
 
-        emit FeesCollected(msg.sender, baseAmount, quoteAmount);
-        return (baseAmount, quoteAmount);
+        // Transfer quote token fees if above minimum
+        if (quoteFeesToClaim >= MINIMUM_COLLECTION_AMOUNT) {
+            IERC20(quoteToken).safeTransfer(msg.sender, quoteFeesToClaim);
+            userQuoteFeeEntitlement[msg.sender] = 0;
+            quoteFeesClaimed = quoteFeesToClaim;
+        }
+
+        emit FeesCollected(msg.sender, baseFeesClaimed, quoteFeesClaimed);
+
+        return (baseFeesClaimed, quoteFeesClaimed);
     }
 
     /// @notice Allows admin to collect accumulated protocol fees
     /// @dev Can only be called by accounts with ADMIN_ROLE
     /// @dev Protocol fees are tracked in basis points and converted to actual token amounts on collection
     /// @dev Resets protocol fee tracking after successful collection
-    /// @return baseAmount The amount of base tokens collected as protocol fees
-    /// @return quoteAmount The amount of quote tokens collected as protocol fees
+    /// @return baseFeesClaimed The amount of base tokens collected as protocol fees
+    /// @return quoteFeesToClaim The amount of quote tokens collected as protocol fees
     function collectProtocolFees()
         external
         nonReentrant
         onlyRole(ADMIN_ROLE)
-        returns (uint256 baseAmount, uint256 quoteAmount)
+        returns (uint256 baseFeesClaimed, uint256 quoteFeesClaimed)
     {
-        uint256 baseFeesInBasisPoints = protocolBaseFeesInBasisPoints;
-        uint256 quoteFeesInBasisPoints = protocolQuoteFeesInBasisPoints;
+        uint256 baseFeesToClaim = protocolBaseFees;
+        uint256 quoteFeesToClaim = protocolQuoteFees;
 
-        if (baseFeesInBasisPoints == 0 && quoteFeesInBasisPoints == 0) revert NoFeesToCollect();
-
-        // Convert basis points to actual token amounts
-        baseAmount = baseFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
-        quoteAmount = quoteFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+        if (baseFeesToClaim == 0 && quoteFeesToClaim == 0) revert NoFeesToCollect();
 
         // Reset protocol fees tracking
-        protocolBaseFeesInBasisPoints = 0;
-        protocolQuoteFeesInBasisPoints = 0;
+        protocolBaseFees = 0;
+        protocolQuoteFees = 0;
 
         // Transfer collected fees
-        if (baseAmount > 0) {
-            IERC20(baseToken).safeTransfer(msg.sender, baseAmount);
+        if (baseFeesToClaim > 0) {
+            IERC20(baseToken).safeTransfer(msg.sender, baseFeesToClaim);
         }
         if (quoteAmount > 0) {
-            IERC20(quoteToken).safeTransfer(msg.sender, quoteAmount);
+            IERC20(quoteToken).safeTransfer(msg.sender, quoteFeesToClaim);
         }
 
-        emit ProtocolFeesCollected(baseAmount, quoteAmount);
-        return (baseAmount, quoteAmount);
+        emit ProtocolFeesCollected(baseFeesToClaim, quoteFeesToClaim);
+
+        return (baseFeesToClaim, quoteFeesToClaim);
     }
 
     /// @notice Returns the pending fees for a given user that can be collected
@@ -654,11 +674,10 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     function getPendingFees(address user) external view returns (uint256 baseAmount, uint256 quoteAmount) {
         if (user == address(0)) revert ZeroAddress();
 
-        uint256 baseFeesInBasisPoints = baseFeesOwedInBasisPoints[user];
-        uint256 quoteFeesInBasisPoints = quoteFeesOwedInBasisPoints[user];
+        _updateUserFeeEntitlement(user);
 
-        baseAmount = baseFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
-        quoteAmount = quoteFeesInBasisPoints / BASIS_POINTS_DENOMINATOR;
+        baseAmount = userBaseFeeEntitlement[user];
+        quoteAmount = userQuoteFeeEntitlement[user];
 
         return (baseAmount, quoteAmount);
     }
@@ -758,17 +777,19 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     function _calculateNetAmount(uint256 amount)
         internal
         pure
-        returns (uint256 netAmount, uint256 lpFeesInBasisPoints, uint256 protocolFeesInBasisPoints)
+        returns (uint256 netAmount, uint256 lpFees, uint256 protocolFees)
     {
         if (amount == 0) return (0, 0, 0);
 
-        uint256 feeTotalInBasisPoints = amount * swapFeeInBasisPoints;
-        uint256 protocolFeesInBasisPoints =
-            (feeTotalInBasisPoints * PROTOCOL_FEE_SHARE_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
-        uint256 lpFeesInBasisPoints = feeTotalInBasisPoints - protocolFeesInBasisPoints;
-        uint256 netAmount = amount - ((lpFeesInBasisPoints + protocolFeesInBasisPoints) / BASIS_POINTS_DENOMINATOR);
+        // Calculate total fees first
+        uint256 totalFees = (amount * swapFeeInBasisPoints) / BASIS_POINTS_DENOMINATOR;
 
-        return (netAmount, lpFeesInBasisPoints, protocolFeesInBasisPoints);
+        // Calculate protocol fees from total fees to minimize rounding errors
+        protocolFees = (totalFees * PROTOCOL_FEE_SHARE_IN_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
+        lpFees = totalFees - protocolFees;
+        netAmount = amount - totalFees;
+
+        return (netAmount, lpFees, protocolFees);
     }
 
     /// @notice Calculates and distributes trading fees between LPs and protocol
@@ -784,38 +805,43 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         returns (uint256 netBaseAmount, uint256 netQuoteAmount)
     {
         // Calculate all amounts and fees at once
-        (netBaseAmount, uint256 baseLpFeesInBasisPoints, uint256 baseProtocolFeesInBasisPoints) =
-            _calculateNetAmount(baseAmount);
-        (netQuoteAmount, uint256 quoteLpFeesInBasisPoints, uint256 quoteProtocolFeesInBasisPoints) =
-            _calculateNetAmount(quoteAmount);
+        (netBaseAmount, uint256 baseLpFees, uint256 baseProtocolFees) = _calculateNetAmount(baseAmount);
+        (netQuoteAmount, uint256 quoteLpFees, uint256 quoteProtocolFees) = _calculateNetAmount(quoteAmount);
 
         if (baseAmount > 0) {
-            protocolBaseFeesInBasisPoints += baseProtocolFeesInBasisPoints;
+            protocolBaseFees += baseProtocolFees;
         }
         if (quoteAmount > 0) {
-            protocolQuoteFeesInBasisPoints += quoteProtocolFeesInBasisPoints;
+            protocolQuoteFees += quoteProtocolFees;
         }
 
         uint256 totalLPSupply = totalSupply();
-        if (totalLPSupply > 0 && (baseLpFeesInBasisPoints > 0 || quoteLpFeesInBasisPoints > 0)) {
-            uint256 userLPShareInBasisPoints = (balanceOf(msg.sender) * BASIS_POINTS_DENOMINATOR) / totalLPSupply;
-
-            if (baseLpFeesInBasisPoints > 0) {
-                uint256 baseUserFeeShareInBasisPoints =
-                    (baseLpFeesInBasisPoints * userLPShareInBasisPoints) / BASIS_POINTS_DENOMINATOR;
-                baseFeesOwedInBasisPoints[msg.sender] += baseUserFeeShareInBasisPoints;
-            }
-
-            if (quoteLpFeesInBasisPoints > 0) {
-                uint256 quoteUserFeeShareInBasisPoints =
-                    (quoteLpFeesInBasisPoints * userLPShareInBasisPoints) / BASIS_POINTS_DENOMINATOR;
-                quoteFeesOwedInBasisPoints[msg.sender] += quoteUserFeeShareInBasisPoints;
-            }
-
-            emit FeesAccrued(msg.sender, baseLpFeesInBasisPoints, quoteLpFeesInBasisPoints);
+        if (totalLPSupply > 0) {
+            totalBaseFeesAccumulated += baseLpFees;
+            totalQuoteFeesAccumulated += quoteLpFees;
         }
 
         return (netBaseAmount, netQuoteAmount);
+    }
+
+    // Add a function to update user's fee entitlement
+    function _updateUserFeeEntitlement(address user) private {
+        uint256 userBalance = balanceOf(user);
+        uint256 totalLPSupply = totalSupply();
+
+        if (userBalance > 0 && totalLPSupply > 0) {
+            // Calculate user's share of accumulated fees since last update
+            uint256 baseFeesSinceLast = totalBaseFeesAccumulated - userLastBaseFees[user];
+            uint256 quoteFeesSinceLast = totalQuoteFeesAccumulated - userLastQuoteFees[user];
+
+            uint256 preciseUserShare = (userBalance * 1e18) / totalLPSupply;
+            userBaseFeeEntitlement[user] += (baseFeesSinceLast * preciseUserShare) / 1e18;
+            userQuoteFeeEntitlement[user] += (quoteFeesSinceLast * preciseUserShare) / 1e18;
+        }
+
+        // Update user's last known total fees
+        userLastBaseFees[user] = totalBaseFeesAccumulated;
+        userLastQuoteFees[user] = totalQuoteFeesAccumulated;
     }
 
     /// @notice Returns the absolute difference between two uint256 values
@@ -851,5 +877,18 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
         liquidity = Math.sqrt(product);
         if (liquidity < MINIMUM_LIQUIDITY) revert InsufficientLiquidityMinted();
         return liquidity;
+    }
+
+    function _afterTokenTransfer(address from, address to, uint256 amount) internal virtual override {
+        super._afterTokenTransfer(from, to, amount);
+
+        // Update fee entitlements for both addresses after the transfer
+        // This ensures correct balances are used for future fee calculations
+        if (from != address(0)) {
+            _updateUserFeeEntitlement(from);
+        }
+        if (to != address(0)) {
+            _updateUserFeeEntitlement(to);
+        }
     }
 }
