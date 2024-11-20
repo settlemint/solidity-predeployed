@@ -585,7 +585,7 @@ contract StarterKitERC20Dex is ERC20, ERC20Permit, AccessControl, Pausable, Reen
     /// @dev Emits EmergencyWithdraw event on successful withdrawal
     function emergencyETHWithdraw() external nonReentrant onlyRole(ADMIN_ROLE) {
         uint256 balance = address(this).balance;
-        if (balance == 0) revert ZeroAmount();
+        if (balance <= 0) revert ZeroAmount();
 
         // Use transfer instead of call to prevent reentrancy and limit gas
         // Only admins can call this function so we know msg.sender is trusted
