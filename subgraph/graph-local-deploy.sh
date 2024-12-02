@@ -13,8 +13,8 @@ restore_addresses() {
 trap restore_addresses EXIT
 
 # Read the new addresses from deployed_addresses.json
-REGISTRY_ADDRESS=$(jq -r '."ContractsModule#StarterKitERC20Registry"' ../ignition/deployments/chain-31337/deployed_addresses.json)
-DEX_FACTORY_ADDRESS=$(jq -r '."ContractsModule#StarterKitERC20DexFactory"' ../ignition/deployments/chain-31337/deployed_addresses.json)
+REGISTRY_ADDRESS=$(jq -r '."ContractsModule#Registry"' ../ignition/deployments/chain-31337/deployed_addresses.json)
+DEX_FACTORY_ADDRESS=$(jq -r '."ContractsModule#DexFactory"' ../ignition/deployments/chain-31337/deployed_addresses.json)
 
 # Update the addresses in subgraph.yaml
 yq e -i ".dataSources[0].source.address = \"$REGISTRY_ADDRESS\"" subgraph.yaml

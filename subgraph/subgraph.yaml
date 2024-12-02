@@ -7,7 +7,7 @@ dataSources:
     network: settlemint
     source:
       address: "0x5e771e1417100000000000000000000000000001"
-      abi: StarterKitERC20Registry
+      abi: Registry
       startBlock: 0
     mapping:
       kind: ethereum/events
@@ -31,26 +31,26 @@ dataSources:
         - ERC20PortfolioStats
         - ERC20DexPairStats
       abis:
-        - name: StarterKitERC20Factory
-          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
-        - name: StarterKitERC20Registry
-          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
-        - name: StarterKitERC20
-          file: ../out/StarterKitERC20.sol/StarterKitERC20.json
-        - name: StarterKitERC20DexFactory
-          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
-        - name: StarterKitERC20Dex
-          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
+        - name: Factory
+          file: ../out/Factory.sol/Factory.json
+        - name: Registry
+          file: ../out/Registry.sol/Registry.json
+        - name: 
+          file: ../out/.sol/.json
+        - name: DexFactory
+          file: ../out/DexFactory.sol/DexFactory.json
+        - name: Dex
+          file: ../out/Dex.sol/Dex.json
       eventHandlers:
         - event: TokenAdded(address,string,string,string,address)
           handler: handleTokenAdded
       file: ./src/datasources/erc20-registry.ts
   - kind: ethereum/contract
-    name: StarterKitERC20DexFactory
+    name: DexFactory
     network: settlemint
     source:
       address: "0x5e771e1417100000000000000000000000000003"
-      abi: StarterKitERC20DexFactory
+      abi: DexFactory
       startBlock: 0
     mapping:
       kind: ethereum/events
@@ -74,16 +74,16 @@ dataSources:
         - ERC20PortfolioStats
         - ERC20DexPairStats
       abis:
-        - name: StarterKitERC20Factory
-          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
-        - name: StarterKitERC20Registry
-          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
-        - name: StarterKitERC20
-          file: ../out/StarterKitERC20.sol/StarterKitERC20.json
-        - name: StarterKitERC20DexFactory
-          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
-        - name: StarterKitERC20Dex
-          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
+        - name: Factory
+          file: ../out/Factory.sol/Factory.json
+        - name: Registry
+          file: ../out/Registry.sol/Registry.json
+        - name: 
+          file: ../out/.sol/.json
+        - name: DexFactory
+          file: ../out/DexFactory.sol/DexFactory.json
+        - name: Dex
+          file: ../out/Dex.sol/Dex.json
       eventHandlers:
         - event: PairCreated(indexed address,indexed address,address,uint256)
           handler: handlePairCreated
@@ -93,7 +93,7 @@ templates:
     name: token
     network: settlemint
     source:
-      abi: StarterKitERC20
+      abi: 
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -116,16 +116,16 @@ templates:
         - ERC20PortfolioStats
         - ERC20DexPairStats
       abis:
-        - name: StarterKitERC20Factory
-          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
-        - name: StarterKitERC20Registry
-          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
-        - name: StarterKitERC20
-          file: ../out/StarterKitERC20.sol/StarterKitERC20.json
-        - name: StarterKitERC20DexFactory
-          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
-        - name: StarterKitERC20Dex
-          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
+        - name: Factory
+          file: ../out/Factory.sol/Factory.json
+        - name: Registry
+          file: ../out/Registry.sol/Registry.json
+        - name: 
+          file: ../out/.sol/.json
+        - name: DexFactory
+          file: ../out/DexFactory.sol/DexFactory.json
+        - name: Dex
+          file: ../out/Dex.sol/Dex.json
       eventHandlers:
         - event: Approval(indexed address,indexed address,uint256)
           handler: handleApproval
@@ -133,10 +133,10 @@ templates:
           handler: handleTransfer
       file: ./src/datasources/erc20.ts
   - kind: ethereum/contract
-    name: StarterKitERC20Dex
+    name: Dex
     network: settlemint
     source:
-      abi: StarterKitERC20Dex
+      abi: Dex
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -159,16 +159,16 @@ templates:
         - ERC20PortfolioStats
         - ERC20DexPairStats
       abis:
-        - name: StarterKitERC20Factory
-          file: ../out/StarterKitERC20Factory.sol/StarterKitERC20Factory.json
-        - name: StarterKitERC20Registry
-          file: ../out/StarterKitERC20Registry.sol/StarterKitERC20Registry.json
-        - name: StarterKitERC20
-          file: ../out/StarterKitERC20.sol/StarterKitERC20.json
-        - name: StarterKitERC20DexFactory
-          file: ../out/StarterKitERC20DexFactory.sol/StarterKitERC20DexFactory.json
-        - name: StarterKitERC20Dex
-          file: ../out/StarterKitERC20Dex.sol/StarterKitERC20Dex.json
+        - name: Factory
+          file: ../out/Factory.sol/Factory.json
+        - name: Registry
+          file: ../out/Registry.sol/Registry.json
+        - name: 
+          file: ../out/.sol/.json
+        - name: DexFactory
+          file: ../out/DexFactory.sol/DexFactory.json
+        - name: Dex
+          file: ../out/Dex.sol/Dex.json
       eventHandlers:
         - event: Mint(indexed address,uint256,uint256,uint256)
           handler: handleMint

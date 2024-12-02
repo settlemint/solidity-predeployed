@@ -1,20 +1,20 @@
 import { constants, decimals, transactions } from '@amxx/graphprotocol-utils';
 import { Address } from '@graphprotocol/graph-ts';
 import {
-  ERC20DexBurn,
-  ERC20DexEmergencyWithdraw,
-  ERC20DexFeeUpdate,
-  ERC20DexMint,
-  ERC20DexPairSnapshot,
-  ERC20DexSwap
+    ERC20DexBurn,
+    ERC20DexEmergencyWithdraw,
+    ERC20DexFeeUpdate,
+    ERC20DexMint,
+    ERC20DexPairSnapshot,
+    ERC20DexSwap
 } from '../../generated/schema';
 import {
-  Burn as BurnEvent,
-  EmergencyWithdraw as EmergencyWithdrawEvent,
-  FeeUpdated as FeeUpdatedEvent,
-  Mint as MintEvent,
-  Swap as SwapEvent
-} from '../../generated/templates/StarterKitERC20Dex/StarterKitERC20Dex';
+    Burn as BurnEvent,
+    EmergencyWithdraw as EmergencyWithdrawEvent,
+    FeeUpdated as FeeUpdatedEvent,
+    Mint as MintEvent,
+    Swap as SwapEvent
+} from '../../generated/templates/Dex/Dex';
 import { fetchAccount } from '../fetch/account';
 import { fetchDex, fetchERC20DexStake } from '../fetch/dex';
 import { fetchERC20 } from '../fetch/erc20';

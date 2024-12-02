@@ -1,26 +1,26 @@
 import {
-  constants,
-  decimals,
+    constants,
+    decimals,
 } from '@amxx/graphprotocol-utils'
 import {
-  Address
+    Address
 } from '@graphprotocol/graph-ts'
 import {
-  Account,
-  ERC20Approval,
-  ERC20Balance,
-  ERC20Contract
+    Account,
+    ERC20Approval,
+    ERC20Balance,
+    ERC20Contract
 } from '../../generated/schema'
-import { StarterKitERC20 } from '../../generated/templates/token/StarterKitERC20'
+import { } from '../../generated/templates/token/'
 import {
-  fetchAccount
+    fetchAccount
 } from './account'
 
 export function fetchERC20(address: Address): ERC20Contract {
   let contract = ERC20Contract.load(address)
 
   if (contract == null) {
-    let endpoint = StarterKitERC20.bind(address)
+    let endpoint = .bind(address)
     let name = endpoint.try_name()
     let symbol = endpoint.try_symbol()
     let decimals = endpoint.try_decimals()
@@ -39,7 +39,7 @@ export function fetchERC20(address: Address): ERC20Contract {
     account.save()
   }
 
-  let erc20Contract = StarterKitERC20.bind(address);
+  let erc20Contract = .bind(address);
   contract.totalSupply = decimals.toDecimals(erc20Contract.totalSupply(), contract.decimals)
   contract.totalSupplyExact = erc20Contract.totalSupply()
   contract.save()
